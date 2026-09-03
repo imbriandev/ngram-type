@@ -14,7 +14,7 @@
       "name": "practice",
       "title": "Practice Ngrams",
       "description": "Train typing speed and accuracy with common n-grams",
-      "mode": "view"
+      "mode": "no-view"
     }
   ],
   "scripts": {

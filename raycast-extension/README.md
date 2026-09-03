@@ -1,6 +1,6 @@
 # Ngram Type for Raycast
 
-A Raycast typing trainer based on [ranelpadon/ngram-type](https://github.com/ranelpadon/ngram-type).
+A focused typing trainer launched from Raycast, based on [ranelpadon/ngram-type](https://github.com/ranelpadon/ngram-type). Raycast opens the bundled local practice window so the UI can provide a large phrase, inline error colors, a visible caret, and an accessible settings dialog.
 
 ## Development
 
@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-Then open Raycast and run **Practice Ngrams**. Settings and progress are stored locally by Raycast.
+Then open Raycast and run **Practice Ngrams**. The command opens the bundled local practice window in your default browser. Settings and progress are stored in that browser's local storage.
 
 ## Publish
 

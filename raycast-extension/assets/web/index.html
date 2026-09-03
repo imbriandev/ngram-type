@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ngram Type</title>
+    <link rel="stylesheet" href="app.css" />
+    <script src="data.js"></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">⌨</span><strong>Ngram Type</strong></div>
+        <div class="toolbar">
+          <label class="select-wrap">
+            <span class="sr-only">Dataset</span>
+            <select id="source" aria-label="Dataset">
+              <option value="bigrams">Bigrams</option>
+              <option value="trigrams">Trigrams</option>
+              <option value="tetragrams">Tetragrams</option>
+              <option value="words">Words</option>
+              <option value="custom_words">Custom words</option>
+            </select>
+          </label>
+          <button id="settings-button" class="icon-button" type="button" title="Settings">⚙</button>
+        </div>
+      </header>
+
+      <section class="practice" aria-label="Typing practice">
+        <p id="lesson" class="lesson">Lesson 1 / 50</p>
+        <div class="phrase-card">
+          <div id="phrase" class="phrase" aria-live="polite"></div>
+        </div>
+        <label class="input-label" for="typing">Type the phrase</label>
+        <textarea id="typing" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Start typing here…"></textarea>
+        <p id="hint" class="hint">Type accurately. Press Esc to reset the phrase.</p>
+        <div class="stats" aria-live="polite">
+          <div><span>WPM</span><strong id="wpm">0</strong></div>
+          <div><span>Accuracy</span><strong id="accuracy">0%</strong></div>
+          <div><span>Average</span><strong id="average">0 WPM</strong></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="settings-dialog">
+      <form id="settings-form" method="dialog">
+        <div class="dialog-header">
+          <div><p class="eyebrow">NGRAM TYPE</p><h2>Practice settings</h2></div>
+          <button id="close-settings" class="icon-button" type="button" aria-label="Close settings">×</button>
+        </div>
+        <div class="settings-grid">
+          <label>Dataset<select name="source" id="settings-source"><option value="bigrams">Bigrams</option><option value="trigrams">Trigrams</option><option value="tetragrams">Tetragrams</option><option value="words">Words</option><option value="custom_words">Custom words</option></select></label>
+          <label>Scope<select name="scope" id="scope"><option value="50">Top 50</option><option value="100">Top 100</option><option value="150">Top 150</option><option value="200">Top 200</option></select></label>
+          <label>Combination<select name="combination"><option>1</option><option>2</option><option>3</option><option>5</option><option>10</option><option>20</option><option>40</option></select></label>
+          <label>Repetition<select name="repetition"><option>1</option><option>2</option><option>3</option><option>5</option></select></label>
+          <label>Minimum WPM<select name="minimumWPM"><option>20</option><option>30</option><option>40</option><option>50</option><option>60</option><option>80</option><option>100</option></select></label>
+          <label>Minimum accuracy<select name="minimumAccuracy"><option value="90">90%</option><option value="95">95%</option><option value="98">98%</option><option value="100">100%</option></select></label>
+        </div>
+        <label class="custom-words">Custom words<textarea name="customWords" rows="4" placeholder="Separate words with spaces or new lines"></textarea></label>
+        <p class="settings-note">Changing settings starts a fresh round. Your data stays in this browser.</p>
+        <div class="dialog-actions"><button id="cancel-settings" type="button" class="secondary">Cancel</button><button type="submit" class="primary">Start practice</button></div>
+      </form>
+    </dialog>
+  </body>
+</html>
