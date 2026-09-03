@@ -3,6 +3,7 @@ import {
   ActionPanel,
   Form,
   Icon,
+  List,
   LocalStorage,
   Toast,
   showToast,
@@ -191,6 +192,11 @@ export default function Practice() {
     if (next.trimEnd() === expected) finishPhrase(next, beganAt);
   }
 
+  function changeSource(value: string) {
+    if (value in sourceTitles)
+      setState((previous) => ({ ...previous, source: value as Source }));
+  }
+
   function saveSettings(
     source: Source,
     sourceSettings: SourceSettings,
@@ -211,18 +217,36 @@ export default function Practice() {
 
   const hasPhrase = Boolean(expected);
   return (
-    <Form
-      navigationTitle={`${sourceTitles[state.source]} · ${session.phraseIndex + 1}/${session.phrases.length || 0}`}
+    <List
+      navigationTitle={sourceTitles[state.source]}
+      searchBarPlaceholder={
+        hasPhrase ? "Type the phrase…" : "Add custom words in Settings"
+      }
+      searchText={typed}
+      onSearchTextChange={handleChange}
+      filtering={false}
+      isShowingDetail
+      searchBarAccessory={
+        <List.Dropdown
+          tooltip="Dataset"
+          value={state.source}
+          onChange={changeSource}
+        >
+          {(Object.keys(sourceTitles) as Source[]).map((value) => (
+            <List.Dropdown.Item
+              key={value}
+              value={value}
+              title={sourceTitles[value]}
+            />
+          ))}
+        </List.Dropdown>
+      }
       actions={
         <ActionPanel>
-          <Action.SubmitForm
-            title="Check Phrase"
-            icon={Icon.CheckCircle}
-            onSubmit={() => {
-              if (typed.trimEnd() === expected && startedAt)
-                finishPhrase(typed, startedAt);
-              else setStatus("Type the phrase exactly, then submit");
-            }}
+          <Action
+            title="Reset Phrase"
+            icon={Icon.ArrowClockwise}
+            onAction={resetPhrase}
           />
           <Action.Push
             title="Settings"
@@ -236,42 +260,53 @@ export default function Practice() {
               />
             }
           />
-          <Action
-            title="Reset Phrase"
-            icon={Icon.ArrowClockwise}
-            onAction={resetPhrase}
-          />
           {hasPhrase && (
             <Action.CopyToClipboard title="Copy Phrase" content={expected} />
           )}
         </ActionPanel>
       }
     >
-      <Form.Description
-        title="Phrase"
-        text={hasPhrase ? expected : "No custom words yet"}
-      />
-      <Form.Separator />
-      <Form.TextField
-        id="typing"
-        title="Type"
-        placeholder={
-          hasPhrase ? "Type the phrase…" : "Open Settings to add words"
+      <List.Item
+        title={hasPhrase ? expected : "No custom words yet"}
+        subtitle={hasPhrase ? status : "Open Settings to add words"}
+        icon={Icon.Keyboard}
+        accessories={[
+          { text: `${session.phraseIndex + 1}/${session.phrases.length || 0}` },
+          { text: `${currentMetrics.wpm} WPM` },
+        ]}
+        detail={
+          <List.Item.Detail
+            markdown={
+              hasPhrase
+                ? `# ${expected}`
+                : "# Ngram Type\n\nAdd custom words to start practicing."
+            }
+            metadata={
+              <List.Item.Detail.Metadata>
+                <List.Item.Detail.Metadata.Label title="Status" text={status} />
+                <List.Item.Detail.Metadata.Label
+                  title="Accuracy"
+                  text={`${currentMetrics.accuracy}%`}
+                />
+                <List.Item.Detail.Metadata.Label
+                  title="Current WPM"
+                  text={String(currentMetrics.wpm)}
+                />
+                <List.Item.Detail.Metadata.Label
+                  title="Average WPM"
+                  text={String(averageWPM)}
+                />
+                <List.Item.Detail.Metadata.Separator />
+                <List.Item.Detail.Metadata.Label
+                  title="Target"
+                  text={`${state.settings[state.source].minimumWPM} WPM · ${state.settings[state.source].minimumAccuracy}%`}
+                />
+              </List.Item.Detail.Metadata>
+            }
+          />
         }
-        value={typed}
-        onChange={handleChange}
-        autoFocus
-        error={
-          typed.length > 0 && !expected.startsWith(typed)
-            ? "Text does not match the phrase"
-            : undefined
-        }
       />
-      <Form.Description
-        title="Progress"
-        text={`${status} · ${currentMetrics.wpm} WPM · ${currentMetrics.accuracy}% accuracy · Average ${averageWPM} WPM`}
-      />
-    </Form>
+    </List>
   );
 }
 
@@ -347,26 +382,58 @@ function SettingsForm({
           />
         ))}
       </Form.Dropdown>
-      <Form.TextField
+      <Form.Dropdown
         id="combination"
         title="Combination"
         defaultValue={String(settings.combination)}
-      />
-      <Form.TextField
+      >
+        {[1, 2, 3, 5, 10, 20, 40].map((value) => (
+          <Form.Dropdown.Item
+            key={value}
+            value={String(value)}
+            title={String(value)}
+          />
+        ))}
+      </Form.Dropdown>
+      <Form.Dropdown
         id="repetition"
         title="Repetition"
         defaultValue={String(settings.repetition)}
-      />
-      <Form.TextField
+      >
+        {[1, 2, 3, 5].map((value) => (
+          <Form.Dropdown.Item
+            key={value}
+            value={String(value)}
+            title={String(value)}
+          />
+        ))}
+      </Form.Dropdown>
+      <Form.Dropdown
         id="minimumWPM"
         title="Minimum WPM"
         defaultValue={String(settings.minimumWPM)}
-      />
-      <Form.TextField
+      >
+        {[20, 30, 40, 50, 60, 80, 100].map((value) => (
+          <Form.Dropdown.Item
+            key={value}
+            value={String(value)}
+            title={String(value)}
+          />
+        ))}
+      </Form.Dropdown>
+      <Form.Dropdown
         id="minimumAccuracy"
         title="Minimum accuracy"
         defaultValue={String(settings.minimumAccuracy)}
-      />
+      >
+        {[90, 95, 98, 100].map((value) => (
+          <Form.Dropdown.Item
+            key={value}
+            value={String(value)}
+            title={`${value}%`}
+          />
+        ))}
+      </Form.Dropdown>
       <Form.TextArea
         id="customWords"
         title="Custom words"
