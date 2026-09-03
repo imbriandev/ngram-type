@@ -75,6 +75,10 @@ Increasing `Combination` and decreasing `Repetition` (which re-shuffles the data
 
 You could start with Top 50 bigrams/trigrams/tetragrams/words first. Then, move to Top 100, Top 150, and Top 200 as your performance improves.
 
+## Raycast Extension
+
+A Raycast version is available in [`raycast-extension/`](./raycast-extension). See its README for local development and publishing instructions.
+
 ## Hosted Version
 You could access the online version using GitHub Pages:
 - https://ranelpadon.github.io/ngram-type/
