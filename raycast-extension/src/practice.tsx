@@ -3,7 +3,6 @@ import {
   ActionPanel,
   Form,
   Icon,
-  List,
   LocalStorage,
   Toast,
   showToast,
@@ -43,10 +42,6 @@ function average(values: number[]) {
   return values.length
     ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
     : 0;
-}
-
-function phraseMarkdown(phrase: string) {
-  return phrase.replace(/[\\`*_{}[\]()#+.!|>]/g, "\\$&");
 }
 
 export default function Practice() {
@@ -217,34 +212,13 @@ export default function Practice() {
     navigation.pop();
   }
 
-  if (!loaded) return null;
-
   const hasPhrase = Boolean(expected);
+  const lessonLabel = hasPhrase
+    ? `Lesson ${session.phraseIndex + 1} / ${session.phrases.length}`
+    : "Ready to practice";
   return (
-    <List
-      navigationTitle={`${sourceTitles[state.source]} · Lesson ${session.phraseIndex + 1}/${session.phrases.length || 0}`}
-      searchBarPlaceholder={
-        hasPhrase ? "Type the phrase…" : "Add custom words in Settings"
-      }
-      searchText={typed}
-      onSearchTextChange={handleChange}
-      filtering={false}
-      isShowingDetail
-      searchBarAccessory={
-        <List.Dropdown
-          tooltip="Dataset"
-          value={state.source}
-          onChange={changeSource}
-        >
-          {(Object.keys(sourceTitles) as Source[]).map((value) => (
-            <List.Dropdown.Item
-              key={value}
-              value={value}
-              title={sourceTitles[value]}
-            />
-          ))}
-        </List.Dropdown>
-      }
+    <Form
+      navigationTitle={`${sourceTitles[state.source]} · ${lessonLabel}`}
       actions={
         <ActionPanel>
           <Action
@@ -270,46 +244,48 @@ export default function Practice() {
         </ActionPanel>
       }
     >
-      <List.Item
-        title="Typing Practice"
-        subtitle={hasPhrase ? status : "Open Settings to add words"}
-        icon={Icon.Keyboard}
-        accessories={[
-          { text: `${session.phraseIndex + 1}/${session.phrases.length || 0}` },
-        ]}
-        detail={
-          <List.Item.Detail
-            markdown={
-              hasPhrase
-                ? `### Lesson ${session.phraseIndex + 1} / ${session.phrases.length}\n\n# ${phraseMarkdown(expected)}\n\n---\n\n${typed.length ? `${typed.length} / ${expected.length} characters` : "Type the phrase in the search bar above"}`
-                : "# Ngram Type\n\nAdd custom words to start practicing."
-            }
-            metadata={
-              <List.Item.Detail.Metadata>
-                <List.Item.Detail.Metadata.Label title="Status" text={status} />
-                <List.Item.Detail.Metadata.Label
-                  title="Accuracy"
-                  text={`${currentMetrics.accuracy}%`}
-                />
-                <List.Item.Detail.Metadata.Label
-                  title="Current WPM"
-                  text={String(currentMetrics.wpm)}
-                />
-                <List.Item.Detail.Metadata.Label
-                  title="Average WPM"
-                  text={String(averageWPM)}
-                />
-                <List.Item.Detail.Metadata.Separator />
-                <List.Item.Detail.Metadata.Label
-                  title="Target"
-                  text={`${state.settings[state.source].minimumWPM} WPM · ${state.settings[state.source].minimumAccuracy}%`}
-                />
-              </List.Item.Detail.Metadata>
-            }
-          />
+      <Form.Description
+        title={lessonLabel}
+        text={
+          hasPhrase ? expected : "Open Settings and add custom words to begin."
         }
       />
-    </List>
+      <Form.Separator />
+      <Form.TextField
+        id="typing"
+        title="Type phrase"
+        placeholder={
+          hasPhrase ? "Start typing here…" : "Add custom words first"
+        }
+        value={typed}
+        onChange={handleChange}
+        autoFocus
+        error={
+          typed.length > 0 && !expected.startsWith(typed)
+            ? "Text does not match the practice phrase"
+            : undefined
+        }
+      />
+      <Form.Description
+        title="Progress"
+        text={`${loaded ? status : "Loading saved progress…"} · ${currentMetrics.wpm} WPM · ${currentMetrics.accuracy}% accuracy · Average ${averageWPM} WPM`}
+      />
+      <Form.Separator />
+      <Form.Dropdown
+        id="source"
+        title="Dataset"
+        value={state.source}
+        onChange={changeSource}
+      >
+        {(Object.keys(sourceTitles) as Source[]).map((value) => (
+          <Form.Dropdown.Item
+            key={value}
+            value={value}
+            title={sourceTitles[value]}
+          />
+        ))}
+      </Form.Dropdown>
+    </Form>
   );
 }
 
