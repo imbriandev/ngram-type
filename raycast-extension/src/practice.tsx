@@ -251,7 +251,7 @@ export default function Practice() {
         }
       />
       <Form.Separator />
-      <Form.TextField
+      <Form.TextArea
         id="typing"
         title="Type phrase"
         placeholder={
