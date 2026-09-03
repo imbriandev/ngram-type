@@ -45,6 +45,10 @@ function average(values: number[]) {
     : 0;
 }
 
+function phraseMarkdown(phrase: string) {
+  return phrase.replace(/[\\`*_{}[\]()#+.!|>]/g, "\\$&");
+}
+
 export default function Practice() {
   const [state, setState] = useState(initialState);
   const [loaded, setLoaded] = useState(false);
@@ -218,7 +222,7 @@ export default function Practice() {
   const hasPhrase = Boolean(expected);
   return (
     <List
-      navigationTitle={sourceTitles[state.source]}
+      navigationTitle={`${sourceTitles[state.source]} · Lesson ${session.phraseIndex + 1}/${session.phrases.length || 0}`}
       searchBarPlaceholder={
         hasPhrase ? "Type the phrase…" : "Add custom words in Settings"
       }
@@ -267,18 +271,17 @@ export default function Practice() {
       }
     >
       <List.Item
-        title={hasPhrase ? expected : "No custom words yet"}
+        title="Typing Practice"
         subtitle={hasPhrase ? status : "Open Settings to add words"}
         icon={Icon.Keyboard}
         accessories={[
           { text: `${session.phraseIndex + 1}/${session.phrases.length || 0}` },
-          { text: `${currentMetrics.wpm} WPM` },
         ]}
         detail={
           <List.Item.Detail
             markdown={
               hasPhrase
-                ? `# ${expected}`
+                ? `### Lesson ${session.phraseIndex + 1} / ${session.phrases.length}\n\n# ${phraseMarkdown(expected)}\n\n---\n\n${typed.length ? `${typed.length} / ${expected.length} characters` : "Type the phrase in the search bar above"}`
                 : "# Ngram Type\n\nAdd custom words to start practicing."
             }
             metadata={
