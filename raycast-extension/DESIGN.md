@@ -145,11 +145,11 @@ in the picker when the active source is Phrases (curriculum Start Lesson).
 
 `package.json` preferences (cold start only when LocalStorage is empty):
 
-| Key | Type | Default | Effect |
-| --- | --- | --- | --- |
-| `defaultMode` | dropdown `guided`\|`free` | `guided` | Initial curriculum mode |
-| `soundEnabled` | checkbox | true | Initial sound toggle |
-| `defaultMinWPM` | textfield | `40` | Free-practice min WPM on cold start |
+| Key             | Type                      | Default  | Effect                              |
+| --------------- | ------------------------- | -------- | ----------------------------------- |
+| `defaultMode`   | dropdown `guided`\|`free` | `guided` | Initial curriculum mode             |
+| `soundEnabled`  | checkbox                  | true     | Initial sound toggle                |
+| `defaultMinWPM` | textfield                 | `40`     | Free-practice min WPM on cold start |
 
 Guided lesson thresholds still come from the track. Saved sessions/progress win
 over preferences after the first run.
@@ -158,3 +158,15 @@ over preferences after the first run.
 
 Richer extension `description`, `keywords` (typing, ngram, wpm, practice, …),
 and command blurb reflecting guided curriculum + optional phrase transfer.
+
+## Ready to use
+
+Daily checklist for Brian after `ray develop` / install:
+
+1. Open **Practice Ngrams** — guided track should land on the current lesson (cold start: Bi · Top 50 · Warm-up).
+2. **Preferences** (Raycast → Extensions → Ngram Type): default mode, sound, free-practice min WPM (cold start only).
+3. **Curriculum** `⌘L` — 11 english-v1 lessons; Start / Resume Current.
+4. While typing, **Enter** = Reset Phrase (primary action).
+5. **Practice Focus Bank** `⌘⇧E` — empty until misses accumulate; then Warm-up-style drill from the bank.
+6. **Open History** `⌘⇧H` — capped round log (WPM / accuracy).
+7. Confirm **English Phrases** are absent from Change Dataset (`⌘D`) until a Phrases lesson is active; they still appear via Curriculum after Core 200.

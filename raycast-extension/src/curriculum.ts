@@ -208,10 +208,7 @@ export function lessonSettings(lesson: Lesson): SourceSettings {
 /** Find a lesson matching source + drill settings (scope/combo/rep). */
 export function lessonForSourceSettings(
   source: Source,
-  settings: Pick<
-    SourceSettings,
-    "scope" | "combination" | "repetition"
-  >,
+  settings: Pick<SourceSettings, "scope" | "combination" | "repetition">,
 ): Lesson | undefined {
   return ENGLISH_TRACK_V1.find(
     (lesson) =>
@@ -362,7 +359,6 @@ export function roundAverageMeetsLesson(
   );
   return average >= lesson.minWPM;
 }
-
 
 export const PRESET_TITLES: Record<LessonPreset, string> = {
   warm_up: "Warm-up",

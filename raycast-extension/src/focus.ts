@@ -98,9 +98,7 @@ export function recordFocusSuccess(
 
   const entries = bank.entries
     .map((entry) =>
-      drilled.has(entry.token)
-        ? { ...entry, misses: entry.misses - 1 }
-        : entry,
+      drilled.has(entry.token) ? { ...entry, misses: entry.misses - 1 } : entry,
     )
     .filter((entry) => entry.misses > 0)
     .sort((a, b) => b.misses - a.misses || b.lastMissedAt - a.lastMissedAt);
@@ -123,7 +121,10 @@ export function hydrateFocusBank(value: unknown): FocusBank {
     if (typeof candidate.token !== "string") continue;
     const token = candidate.token.trim();
     if (!token || token.length > 64) continue;
-    if (typeof candidate.misses !== "number" || !Number.isFinite(candidate.misses))
+    if (
+      typeof candidate.misses !== "number" ||
+      !Number.isFinite(candidate.misses)
+    )
       continue;
     const misses = Math.floor(candidate.misses);
     if (misses < 1 || misses > 10_000) continue;
@@ -223,8 +224,7 @@ export function formatRoundTitle(summary: RoundSummary): string {
 
 export function formatRoundSubtitle(summary: RoundSummary): string {
   if (summary.source === "focus") return "Focus bank";
-  const scope =
-    summary.scope === null ? "Custom" : `Top ${summary.scope}`;
+  const scope = summary.scope === null ? "Custom" : `Top ${summary.scope}`;
   const lesson = summary.lessonId ? ` · ${summary.lessonId}` : "";
   return `${summary.source} · ${scope}${lesson}`;
 }

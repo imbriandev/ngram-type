@@ -15,7 +15,7 @@ Then open Raycast and run **Practice Ngrams**.
 - Read the stable target at the top, then type in the native **Your turn** area; accuracy updates live, while WPM appears after each phrase.
 - Correct mistakes in place using the inline character hint. Accuracy includes corrected mistakes, so the threshold represents the full attempt.
 - Paste is disabled during a drill to keep WPM meaningful.
-- Use **Reset Phrase** (`⌘R`) to clear the phrase or **Change Dataset** (`⌘D`) from Actions.
+- Use **Reset Phrase** (`Enter`) to clear the phrase or **Change Dataset** (`⌘D`) from Actions.
 - Open **Actions** (`⌘K`) for settings, a new round, sound, or copying the phrase.
 - Choose a Warm-up, Build, or Flow preset in Settings; advanced controls appear only for Custom, and drafts are retained while switching datasets.
 - Follow the **guided english-v1** curriculum (⌘L): Bigrams → Trigrams → Tetragrams → English Core, then optional English Phrases for sentence transfer.
@@ -24,6 +24,13 @@ Then open Raycast and run **Practice Ngrams**.
 - Extension Preferences set cold-start mode (guided/free), default sound, and free-practice minimum WPM.
 - Typing, mistake, pass, and fail sounds can be toggled in **Settings**.
 - Lesson position, seeded sessions, Focus bank, and light history are saved in Raycast LocalStorage and restored on the next launch.
+
+## Ready to use
+
+1. Run `npm run dev`, then open **Practice Ngrams**.
+2. Check Extension **Preferences** (mode / sound / free min WPM — cold start only).
+3. **Curriculum** `⌘L` · **Focus** `⌘⇧E` · **History** `⌘⇧H` · **Enter** resets the phrase.
+4. Phrases stay out of the dataset picker until a Phrases curriculum lesson is started.
 
 ## Publish
 

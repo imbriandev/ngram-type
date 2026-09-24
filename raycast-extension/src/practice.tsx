@@ -349,10 +349,7 @@ export default function Practice() {
 
   useEffect(() => {
     if (loaded) {
-      void LocalStorage.setItem(
-        PROGRESS_STORAGE_KEY,
-        JSON.stringify(progress),
-      );
+      void LocalStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress));
     }
   }, [loaded, progress]);
 
@@ -523,9 +520,7 @@ export default function Practice() {
         at: Date.now(),
         lessonId: activeLesson?.id ?? null,
         source: state.focusActive ? "focus" : state.source,
-        scope: state.focusActive
-          ? null
-          : (settings.scope ?? null),
+        scope: state.focusActive ? null : (settings.scope ?? null),
         avgWpm: roundAvg,
         accuracy: roundAccuracyAvg,
       };
@@ -930,7 +925,6 @@ export default function Practice() {
   );
 }
 
-
 function HistoryList({ history }: { history: PracticeHistory }) {
   return (
     <List navigationTitle="Practice History">
@@ -1006,11 +1000,7 @@ function CurriculumList({
             title={`${index + 1}. ${lesson.title}`}
             subtitle={formatLessonSubtitle(lesson)}
             icon={
-              isCurrent
-                ? Icon.Play
-                : completed
-                  ? Icon.CheckCircle
-                  : Icon.Circle
+              isCurrent ? Icon.Play : completed ? Icon.CheckCircle : Icon.Circle
             }
             accessories={accessories}
             actions={
