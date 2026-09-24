@@ -25,9 +25,16 @@ export type SourceSettings = {
 };
 
 export type Session = {
+  /** Deterministic shuffle seed; phrases are regenerated, not persisted. */
+  seed: number;
+  /** Settings used when the session was created (regeneration must match). */
+  settings: SourceSettings;
   phrases: string[];
   phraseIndex: number;
   wpms: number[];
+  accuracies: number[];
+  /** Optional token list (Focus bank snapshot) used instead of the dataset. */
+  values?: string[];
 };
 
 export type PracticeState = {
@@ -37,6 +44,8 @@ export type PracticeState = {
   settings: Record<Source, SourceSettings>;
   customWords: string[];
   sessions: Record<Source, Session>;
+  /** When true, the active session was built from the Focus miss bank. */
+  focusActive: boolean;
 };
 
 export type Attempt = {
@@ -50,7 +59,22 @@ export type TextEdit = {
   removed: string;
 };
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
+
+/** Mulberry32 PRNG — same seed always yields the same shuffle. */
+export function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function createSeed(): number {
+  return (Math.random() * 0xffffffff) >>> 0;
+}
 
 const builtInSources: Record<Exclude<Source, "custom_words">, string[]> = {
   bigrams,
@@ -142,21 +166,32 @@ export function defaultSettings(): Record<Source, SourceSettings> {
   ) as Record<Source, SourceSettings>;
 }
 
+export type GeneratePhrasesOptions = {
+  seed?: number;
+  /** When set (e.g. Focus bank), use these tokens instead of the dataset. */
+  values?: string[];
+};
+
 export function generatePhrases(
   source: Source,
   settings: SourceSettings,
   customWords: string[],
+  options: GeneratePhrasesOptions = {},
 ): string[] {
   const values =
-    source === "custom_words" ? customWords : builtInSources[source];
+    options.values ??
+    (source === "custom_words" ? customWords : builtInSources[source]);
   const scoped = values.slice(0, settings.scope ?? values.length);
+  const random =
+    options.seed !== undefined ? mulberry32(options.seed >>> 0) : Math.random;
   const shuffled = [...scoped];
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  if (isPhraseSource(source)) return shuffled;
+  // Focus / override lists are always treated as item banks (not natural sentences).
+  if (isPhraseSource(source) && !options.values) return shuffled;
 
   const combination = Math.max(1, Math.floor(settings.combination) || 1);
   const repetition = Math.max(1, Math.floor(settings.repetition) || 1);
@@ -172,11 +207,19 @@ export function newSession(
   source: Source,
   settings: SourceSettings,
   customWords: string[],
+  options: GeneratePhrasesOptions = {},
 ): Session {
+  const seed = options.seed ?? createSeed();
+  const values = options.values;
+  const snapshot: SourceSettings = { ...settings };
   return {
-    phrases: generatePhrases(source, settings, customWords),
+    seed,
+    settings: snapshot,
+    phrases: generatePhrases(source, snapshot, customWords, { seed, values }),
     phraseIndex: 0,
     wpms: [],
+    accuracies: [],
+    ...(values && values.length > 0 ? { values: [...values] } : {}),
   };
 }
 
@@ -186,13 +229,51 @@ export function completeSessionPhrase(
   settings: SourceSettings,
   customWords: string[],
   wpm: number,
+  accuracy: number,
 ): Session {
   const wpms = [...session.wpms, wpm];
+  const accuracies = [...session.accuracies, accuracy];
   if (session.phraseIndex + 1 < session.phrases.length) {
-    return { ...session, phraseIndex: session.phraseIndex + 1, wpms };
+    return {
+      ...session,
+      phraseIndex: session.phraseIndex + 1,
+      wpms,
+      accuracies,
+    };
   }
 
-  return newSession(source, settings, customWords);
+  return newSession(source, session.settings, customWords, {
+    values: session.values,
+  });
+}
+
+/** Persistable session fields — phrases are regenerated from seed on load. */
+export function serializeSession(session: Session) {
+  return {
+    seed: session.seed,
+    settings: session.settings,
+    phraseIndex: session.phraseIndex,
+    wpms: session.wpms,
+    accuracies: session.accuracies,
+    ...(session.values && session.values.length > 0
+      ? { values: session.values }
+      : {}),
+  };
+}
+
+export function serializePracticeState(state: PracticeState) {
+  const sessions = Object.fromEntries(
+    sources.map((source) => [source, serializeSession(state.sessions[source])]),
+  ) as Record<Source, ReturnType<typeof serializeSession>>;
+  return {
+    version: state.version,
+    source: state.source,
+    soundEnabled: state.soundEnabled,
+    settings: state.settings,
+    customWords: state.customWords,
+    sessions,
+    focusActive: state.focusActive,
+  };
 }
 
 export function createAttempt(): Attempt {
@@ -282,6 +363,7 @@ export function createPracticeState(): PracticeState {
     settings,
     customWords: [],
     sessions,
+    focusActive: false,
   };
 }
 
@@ -312,6 +394,9 @@ export function hydratePracticeState(value: unknown): PracticeState | null {
     sessions[currentSource] = sanitizeSession(
       rawSessions[currentSource],
       fallback,
+      currentSource,
+      settings[currentSource],
+      customWords,
     );
   });
 
@@ -325,6 +410,7 @@ export function hydratePracticeState(value: unknown): PracticeState | null {
     settings,
     customWords,
     sessions,
+    focusActive: value.focusActive === true,
   };
 }
 
@@ -375,43 +461,105 @@ function sanitizeSettings(
   };
 }
 
-function sanitizeSession(value: unknown, fallback: Session): Session {
+function sanitizeSession(
+  value: unknown,
+  fallback: Session,
+  source: Source,
+  settings: SourceSettings,
+  customWords: string[],
+): Session {
   if (!isRecord(value)) return fallback;
+
+  const values = sanitizeSessionValues(value.values);
+  const seed = sanitizeSeed(value.seed);
+  const snapshot = sanitizeSettings(source, value.settings, settings);
+
+  // Preferred: regenerate phrases from seed (+ optional Focus values).
+  if (seed !== null) {
+    const phrases = generatePhrases(source, snapshot, customWords, {
+      seed,
+      values,
+    });
+    if (phrases.length === 0) return fallback;
+    const phraseIndex = boundedInteger(
+      value.phraseIndex,
+      0,
+      phrases.length - 1,
+      -1,
+    );
+    if (phraseIndex === -1) return fallback;
+    return {
+      seed,
+      settings: snapshot,
+      phrases,
+      phraseIndex,
+      wpms: sanitizeMetricList(value.wpms, phraseIndex),
+      accuracies: sanitizeMetricList(value.accuracies, phraseIndex),
+      ...(values ? { values } : {}),
+    };
+  }
+
+  // Legacy: accept any-length phrase arrays (no 1000 cap) and attach a seed
+  // for the next persist cycle. Phrases kept as-is for this runtime only.
   if (
-    !Array.isArray(value.phrases) ||
-    value.phrases.length === 0 ||
-    value.phrases.length > 1_000 ||
-    !value.phrases.every(
+    Array.isArray(value.phrases) &&
+    value.phrases.length > 0 &&
+    value.phrases.every(
       (phrase) =>
         typeof phrase === "string" &&
         phrase.trim().length > 0 &&
-        phrase.length <= 1_000,
+        phrase.length <= 2_000,
     )
   ) {
-    return fallback;
+    const phraseIndex = boundedInteger(
+      value.phraseIndex,
+      0,
+      value.phrases.length - 1,
+      -1,
+    );
+    if (phraseIndex === -1) return fallback;
+    return {
+      seed: createSeed(),
+      settings: snapshot,
+      phrases: [...value.phrases],
+      phraseIndex,
+      wpms: sanitizeMetricList(value.wpms, phraseIndex),
+      accuracies: sanitizeMetricList(value.accuracies, phraseIndex),
+      ...(values ? { values } : {}),
+    };
   }
 
-  const phraseIndex = boundedInteger(
-    value.phraseIndex,
-    0,
-    value.phrases.length - 1,
-    -1,
-  );
-  if (phraseIndex === -1) return fallback;
+  return fallback;
+}
 
-  const wpms = Array.isArray(value.wpms)
-    ? value.wpms
-        .filter(
-          (wpm): wpm is number =>
-            typeof wpm === "number" &&
-            Number.isFinite(wpm) &&
-            wpm >= 0 &&
-            wpm <= 2_000,
-        )
-        .slice(0, phraseIndex)
-    : [];
+function sanitizeSeed(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const integer = Math.floor(value);
+  if (integer < 0 || integer > 0xffffffff) return null;
+  return integer >>> 0;
+}
 
-  return { phrases: [...value.phrases], phraseIndex, wpms };
+function sanitizeSessionValues(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const tokens = value
+    .filter((token): token is string => typeof token === "string")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0 && token.length <= 64)
+    .slice(0, 50);
+  return tokens.length > 0 ? tokens : undefined;
+}
+
+function sanitizeMetricList(value: unknown, phraseIndex: number): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (entry): entry is number =>
+        typeof entry === "number" &&
+        Number.isFinite(entry) &&
+        entry >= 0 &&
+        entry <= 2_000,
+    )
+    .slice(0, phraseIndex);
 }
 
 function sanitizeCustomWords(value: unknown) {

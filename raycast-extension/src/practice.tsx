@@ -25,12 +25,31 @@ import {
   newSession,
   PracticeState,
   recordAttempt,
+  serializePracticeState,
   Source,
   SourceSettings,
   sources,
   sourcesForPicker,
   sourceTitles,
 } from "./logic";
+import {
+  FOCUS_STORAGE_KEY,
+  HISTORY_STORAGE_KEY,
+  FocusBank,
+  PracticeHistory,
+  RoundSummary,
+  appendRound,
+  createFocusBank,
+  createHistory,
+  focusTokens,
+  formatRoundSubtitle,
+  formatRoundTitle,
+  hydrateFocusBank,
+  hydrateHistory,
+  recordFocusMiss,
+  recordFocusSuccess,
+  tokenAtIndex,
+} from "./focus";
 import {
   CURRICULUM_TRACK_ID,
   ENGLISH_TRACK_V1,
@@ -170,6 +189,8 @@ function readableCharacter(character: string | undefined) {
 export default function Practice() {
   const [state, setState] = useState<PracticeState>(createPracticeState);
   const [progress, setProgress] = useState<CurriculumProgress>(createProgress);
+  const [focusBank, setFocusBank] = useState<FocusBank>(createFocusBank);
+  const [history, setHistory] = useState<PracticeHistory>(createHistory);
   const [loaded, setLoaded] = useState(false);
   const [typed, setTyped] = useState("");
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -206,9 +227,13 @@ export default function Practice() {
     Promise.all([
       LocalStorage.getItem<string>(STORAGE_KEY),
       LocalStorage.getItem<string>(PROGRESS_STORAGE_KEY),
-    ]).then(([rawState, rawProgress]) => {
+      LocalStorage.getItem<string>(FOCUS_STORAGE_KEY),
+      LocalStorage.getItem<string>(HISTORY_STORAGE_KEY),
+    ]).then(([rawState, rawProgress, rawFocus, rawHistory]) => {
       let nextState = createPracticeState();
       let nextProgress = createProgress();
+      let nextFocus = createFocusBank();
+      let nextHistory = createHistory();
       try {
         const saved = rawState ? (JSON.parse(rawState) as unknown) : undefined;
         const hydrated = hydratePracticeState(saved);
@@ -224,8 +249,24 @@ export default function Practice() {
       } catch {
         nextProgress = createProgress();
       }
+      try {
+        const savedFocus = rawFocus
+          ? (JSON.parse(rawFocus) as unknown)
+          : undefined;
+        nextFocus = hydrateFocusBank(savedFocus);
+      } catch {
+        nextFocus = createFocusBank();
+      }
+      try {
+        const savedHistory = rawHistory
+          ? (JSON.parse(rawHistory) as unknown)
+          : undefined;
+        nextHistory = hydrateHistory(savedHistory);
+      } catch {
+        nextHistory = createHistory();
+      }
 
-      if (nextProgress.mode === "guided") {
+      if (nextProgress.mode === "guided" && !nextState.focusActive) {
         const lesson = getLesson(nextProgress.currentLessonId);
         if (lesson) {
           const currentSettings = nextState.settings[lesson.source];
@@ -240,12 +281,19 @@ export default function Practice() {
 
       setState(nextState);
       setProgress(nextProgress);
+      setFocusBank(nextFocus);
+      setHistory(nextHistory);
       setLoaded(true);
     });
   }, []);
 
   useEffect(() => {
-    if (loaded) void LocalStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (loaded) {
+      void LocalStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(serializePracticeState(state)),
+      );
+    }
   }, [loaded, state]);
 
   useEffect(() => {
@@ -256,6 +304,18 @@ export default function Practice() {
       );
     }
   }, [loaded, progress]);
+
+  useEffect(() => {
+    if (loaded) {
+      void LocalStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify(focusBank));
+    }
+  }, [loaded, focusBank]);
+
+  useEffect(() => {
+    if (loaded) {
+      void LocalStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    }
+  }, [loaded, history]);
 
   useEffect(() => {
     setTyped("");
@@ -298,17 +358,30 @@ export default function Practice() {
 
   function restartRound() {
     setLastResult(null);
-    setState((previous) => ({
-      ...previous,
-      sessions: {
-        ...previous.sessions,
-        [previous.source]: newSession(
-          previous.source,
-          previous.settings[previous.source],
-          previous.customWords,
-        ),
-      },
-    }));
+    setState((previous) => {
+      const current = previous.sessions[previous.source];
+      const values =
+        previous.focusActive && current.values && current.values.length > 0
+          ? current.values
+          : previous.focusActive
+            ? focusTokens(focusBank)
+            : undefined;
+      if (previous.focusActive && (!values || values.length === 0)) {
+        return { ...previous, focusActive: false };
+      }
+      return {
+        ...previous,
+        sessions: {
+          ...previous.sessions,
+          [previous.source]: newSession(
+            previous.source,
+            previous.settings[previous.source],
+            previous.customWords,
+            values ? { values } : {},
+          ),
+        },
+      };
+    });
     resetPhrase("New round ready");
   }
 
@@ -331,6 +404,16 @@ export default function Practice() {
       result.wpm < settings.minimumWPM ||
       result.accuracy < settings.minimumAccuracy
     ) {
+      // Failed attempt: bank every token in the phrase for Focus practice.
+      const failedTokens = expected.split(/\s+/).filter(Boolean);
+      if (failedTokens.length > 0) {
+        setFocusBank((previous) =>
+          failedTokens.reduce(
+            (bank, token) => recordFocusMiss(bank, token),
+            previous,
+          ),
+        );
+      }
       setCurrentMetrics(result);
       setLastResult(result);
       playSound("fail", state.soundEnabled);
@@ -355,6 +438,17 @@ export default function Practice() {
         ? getLesson(progress.currentLessonId)
         : undefined;
 
+    // Clean completion decays Focus entries for tokens in this phrase.
+    if (result.accuracy >= 100) {
+      const drilled = expected.split(/\s+/).filter(Boolean);
+      if (drilled.length > 0) {
+        setFocusBank((previous) => recordFocusSuccess(previous, drilled));
+      }
+    }
+
+    const roundAccuracies = [...currentSession.accuracies, result.accuracy];
+    const roundAccuracyAvg = average(roundAccuracies);
+
     setState((previous) => {
       const current = previous.sessions[previous.source];
       return {
@@ -367,13 +461,29 @@ export default function Practice() {
             previous.settings[previous.source],
             previous.customWords,
             result.wpm,
+            result.accuracy,
           ),
         },
       };
     });
 
+    if (finishedRound) {
+      const summary: RoundSummary = {
+        at: Date.now(),
+        lessonId: activeLesson?.id ?? null,
+        source: state.focusActive ? "focus" : state.source,
+        scope: state.focusActive
+          ? null
+          : (settings.scope ?? null),
+        avgWpm: roundAvg,
+        accuracy: roundAccuracyAvg,
+      };
+      setHistory((previous) => appendRound(previous, summary));
+    }
+
     if (
       activeLesson &&
+      !state.focusActive &&
       finishedRound &&
       roundAverageMeetsLesson(roundWpms, activeLesson)
     ) {
@@ -428,6 +538,12 @@ export default function Practice() {
     if (next.length > typed.length && !completesPhrase) {
       playSound(isWrong ? "error" : "key", state.soundEnabled);
     }
+    if (isWrong && edit.inserted.length === 1) {
+      const token = tokenAtIndex(expected, edit.index);
+      if (token) {
+        setFocusBank((previous) => recordFocusMiss(previous, token));
+      }
+    }
     setTyped(next);
     setAttempt(nextAttempt);
     setInputNotice(null);
@@ -441,7 +557,45 @@ export default function Practice() {
     setLastResult(null);
     setStatus(message);
     setProgress((previous) => advanceToLesson(previous, lesson.id));
-    setState((previous) => applyLesson(previous, lesson));
+    setState((previous) => ({
+      ...applyLesson(previous, lesson),
+      focusActive: false,
+    }));
+  }
+
+  function startFocusPractice() {
+    const tokens = focusTokens(focusBank);
+    if (tokens.length === 0) {
+      setStatus("Focus bank empty · mistype to collect tokens");
+      return;
+    }
+    setLastResult(null);
+    setProgress((previous) =>
+      previous.mode === "guided" ? { ...previous, mode: "free" } : previous,
+    );
+    setState((previous) => {
+      const base = previous.settings[previous.source];
+      const focusSettings = {
+        ...base,
+        scope: tokens.length,
+        combination: Math.min(2, tokens.length),
+        repetition: 3,
+      };
+      return {
+        ...previous,
+        focusActive: true,
+        sessions: {
+          ...previous.sessions,
+          [previous.source]: newSession(
+            previous.source,
+            focusSettings,
+            previous.customWords,
+            { values: tokens },
+          ),
+        },
+      };
+    });
+    setStatus(`Focus · ${tokens.length} tokens from recent misses`);
   }
 
   function goToNextLesson() {
@@ -460,6 +614,7 @@ export default function Practice() {
 
   function jumpToFreePractice() {
     setProgress((previous) => ({ ...previous, mode: "free" }));
+    setState((previous) => ({ ...previous, focusActive: false }));
     setStatus("Free practice · change dataset anytime in Settings");
   }
 
@@ -478,6 +633,7 @@ export default function Practice() {
       setState((previous) => ({
         ...previous,
         source: value as Source,
+        focusActive: false,
       }));
     }
   }
@@ -532,6 +688,7 @@ export default function Practice() {
         customWords,
         settings: nextSettings,
         sessions,
+        focusActive: false,
       };
     });
     navigation.pop();
@@ -542,9 +699,11 @@ export default function Practice() {
   return (
     <Form
       navigationTitle={
-        guided
-          ? `${guided.title}${hasPhrase ? ` · ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : ""}`
-          : `Ngram Type · ${sourceTitles[state.source]} · ${hasPhrase ? `${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : "Setup"}`
+        state.focusActive
+          ? `Focus · ${focusBank.entries.length} tokens${hasPhrase ? ` · ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : ""}`
+          : guided
+            ? `${guided.title}${hasPhrase ? ` · ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : ""}`
+            : `Ngram Type · ${sourceTitles[state.source]} · ${hasPhrase ? `${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : "Setup"}`
       }
       actions={
         <ActionPanel>
@@ -628,6 +787,24 @@ export default function Practice() {
               />
             )}
           </ActionPanel.Section>
+          <ActionPanel.Section title="Reflex">
+            <Action
+              title={
+                focusBank.entries.length > 0
+                  ? `Practice Focus Bank (${focusBank.entries.length})`
+                  : "Practice Focus Bank"
+              }
+              icon={Icon.BullsEye}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+              onAction={startFocusPractice}
+            />
+            <Action.Push
+              title="Open History"
+              icon={Icon.Clock}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "h" }}
+              target={<HistoryList history={history} />}
+            />
+          </ActionPanel.Section>
           <ActionPanel.Section title="Configure">
             <Action.Push
               title="Practice Settings"
@@ -664,7 +841,11 @@ export default function Practice() {
     >
       <Form.Description
         title="Track"
-        text={formatTrackProgressDescription(progress)}
+        text={
+          state.focusActive
+            ? `Focus · ${focusBank.entries.length} recent misses · Amphetype-style drill`
+            : formatTrackProgressDescription(progress)
+        }
       />
       <Form.Description
         title="Type this"
@@ -698,6 +879,42 @@ export default function Practice() {
   );
 }
 
+
+function HistoryList({ history }: { history: PracticeHistory }) {
+  return (
+    <List navigationTitle="Practice History">
+      {history.rounds.length === 0 ? (
+        <List.EmptyView
+          title="No rounds yet"
+          description="Finish a round to see average WPM and accuracy here."
+        />
+      ) : (
+        history.rounds.map((round, index) => (
+          <List.Item
+            key={`${round.at}-${index}`}
+            title={formatRoundTitle(round)}
+            subtitle={formatRoundSubtitle(round)}
+            icon={round.source === "focus" ? Icon.BullsEye : Icon.BarChart}
+            accessories={[
+              {
+                tag: {
+                  value: `${round.avgWpm} WPM`,
+                  color: Color.Blue,
+                },
+              },
+              {
+                tag: {
+                  value: `${round.accuracy}%`,
+                  color: round.accuracy >= 100 ? Color.Green : Color.Orange,
+                },
+              },
+            ]}
+          />
+        ))
+      )}
+    </List>
+  );
+}
 
 function CurriculumList({
   progress,

@@ -98,3 +98,20 @@ UX:
 - Finishing a round at or above the lesson’s min WPM marks the lesson complete and suggests **Next lesson** in status text; advance is an Action, not forced.
 - Action Panel: **Open Curriculum**, **Resume Guided Track** (when free), **Next Lesson**, **Retry Lesson**, **Jump to Free Practice**.
 - Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset or saving mismatched settings leaves guided mode.
+
+## Phase 2 — reflex training
+
+Seeded sessions, Focus miss bank, and light round history.
+
+### Seeded sessions
+
+Practice state version **5**. Each session stores `{ seed, settings snapshot, phraseIndex, wpms, accuracies, values? }` — **not** the phrase array. `generatePhrases` uses mulberry32 so the same seed + settings (+ optional Focus `values`) regenerates identical phrases on hydrate. Reloading Raycast mid-round restores the same phrases and progress. The old sanitize that wiped sessions with `phrases.length > 1000` is gone; legacy phrase arrays still hydrate once, then migrate to the seed model on the next save.
+
+### Focus-from-errors bank
+
+LocalStorage key `ngram-type-focus`. Wrong keystrokes and failed phrase attempts record the whitespace-delimited token into a capped bank (40). **Practice Focus Bank** (⌘⇧E) in the Reflex action section starts a Warm-up-style drill from those tokens (virtual bank via session `values`). Clean 100% phrase completions decay those tokens; zero misses removes them.
+
+### Light history
+
+LocalStorage key `ngram-type-history`, append-only, cap 100. Each finished round stores date, lessonId/source (or `focus`), scope, avg WPM, accuracy. **Open History** (⌘⇧H) pushes a simple List.
+

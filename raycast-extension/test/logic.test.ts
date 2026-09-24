@@ -11,7 +11,9 @@ import {
   hydratePracticeState,
   isPhraseSource,
   metrics,
+  newSession,
   recordAttempt,
+  serializePracticeState,
   sourcesForPicker,
 } from "../src/logic";
 import { englishCoreWords, englishPhrases } from "../src/data";
@@ -54,23 +56,87 @@ test("calculates WPM when an attempt starts at timestamp zero", () => {
 test("starts a clean round after the final phrase", () => {
   const state = createPracticeState();
   const settings = state.settings.bigrams;
+  const seeded = newSession("bigrams", settings, [], {
+    seed: 99,
+    values: ["th", "he"],
+  });
+  // Force a 2-phrase session for the advance check.
   const first = completeSessionPhrase(
-    { phrases: ["th", "he"], phraseIndex: 0, wpms: [] },
+    { ...seeded, phrases: ["th", "he"], phraseIndex: 0, wpms: [], accuracies: [] },
     "bigrams",
     settings,
     [],
     50,
+    100,
   );
-  assert.deepEqual(first, {
-    phrases: ["th", "he"],
-    phraseIndex: 1,
-    wpms: [50],
-  });
+  assert.equal(first.phraseIndex, 1);
+  assert.deepEqual(first.wpms, [50]);
+  assert.deepEqual(first.accuracies, [100]);
 
-  const nextRound = completeSessionPhrase(first, "bigrams", settings, [], 60);
+  const nextRound = completeSessionPhrase(first, "bigrams", settings, [], 60, 98);
   assert.equal(nextRound.phraseIndex, 0);
   assert.deepEqual(nextRound.wpms, []);
-  assert.equal(nextRound.phrases.length, 25);
+  assert.deepEqual(nextRound.accuracies, []);
+  assert.ok(nextRound.phrases.length > 0);
+  assert.ok(typeof nextRound.seed === "number");
+});
+
+test("same seed regenerates identical phrases", () => {
+  const settings = createPracticeState().settings.bigrams;
+  const a = generatePhrases("bigrams", settings, [], { seed: 42 });
+  const b = generatePhrases("bigrams", settings, [], { seed: 42 });
+  const c = generatePhrases("bigrams", settings, [], { seed: 43 });
+  assert.deepEqual(a, b);
+  assert.notDeepEqual(a, c);
+  assert.equal(a.length, 25);
+});
+
+test("hydrate restores mid-round progress from seed without phrases", () => {
+  const session = newSession(
+    "bigrams",
+    createPracticeState().settings.bigrams,
+    [],
+    { seed: 1_234_567 },
+  );
+  const persisted = {
+    source: "bigrams",
+    soundEnabled: true,
+    focusActive: false,
+    customWords: [],
+    settings: createPracticeState().settings,
+    sessions: {
+      bigrams: {
+        seed: session.seed,
+        settings: session.settings,
+        phraseIndex: 2,
+        wpms: [40, 45],
+        accuracies: [100, 98],
+      },
+    },
+  };
+
+  const restored = hydratePracticeState(persisted);
+  assert.ok(restored);
+  assert.deepEqual(restored.sessions.bigrams.phrases, session.phrases);
+  assert.equal(restored.sessions.bigrams.phraseIndex, 2);
+  assert.deepEqual(restored.sessions.bigrams.wpms, [40, 45]);
+  assert.deepEqual(restored.sessions.bigrams.accuracies, [100, 98]);
+  assert.equal(restored.sessions.bigrams.seed, 1_234_567);
+});
+
+test("serializePracticeState omits phrase arrays", () => {
+  const state = createPracticeState();
+  const serialized = serializePracticeState(state);
+  assert.equal("phrases" in serialized.sessions.bigrams, false);
+  assert.equal(typeof serialized.sessions.bigrams.seed, "number");
+  assert.ok(serialized.sessions.bigrams.settings);
+
+  const roundTrip = hydratePracticeState(serialized);
+  assert.ok(roundTrip);
+  assert.deepEqual(
+    roundTrip.sessions.bigrams.phrases,
+    state.sessions.bigrams.phrases,
+  );
 });
 
 test("hydrates a malformed saved state into a safe session", () => {
@@ -105,24 +171,50 @@ test("hydrates a malformed saved state into a safe session", () => {
   });
   assert.equal(restored.sessions.words.phraseIndex, 0);
   assert.equal(restored.sessions.words.phrases.length, 25);
+  assert.equal(restored.focusActive, false);
 });
 
-test("preserves valid saved progress and trims stale round statistics", () => {
-  const state = createPracticeState();
-  state.source = "words";
-  state.sessions.words = {
-    phrases: ["the", "and", "of"],
-    phraseIndex: 1,
-    wpms: [48, 52],
-  };
-
-  const restored = hydratePracticeState(state);
-  assert.ok(restored);
-  assert.deepEqual(restored.sessions.words, {
-    phrases: ["the", "and", "of"],
-    phraseIndex: 1,
-    wpms: [48],
+test("legacy phrase sessions above 1000 items still hydrate", () => {
+  const phrases = Array.from({ length: 1_200 }, (_, i) => `w${i}`);
+  const restored = hydratePracticeState({
+    source: "bigrams",
+    sessions: {
+      bigrams: { phrases, phraseIndex: 10, wpms: [40] },
+    },
   });
+  assert.ok(restored);
+  assert.equal(restored.sessions.bigrams.phrases.length, 1_200);
+  assert.equal(restored.sessions.bigrams.phraseIndex, 10);
+  assert.ok(typeof restored.sessions.bigrams.seed === "number");
+});
+
+test("focus values override regenerates from the same seed", () => {
+  const settings = {
+    ...createPracticeState().settings.bigrams,
+    scope: 4,
+    combination: 2,
+    repetition: 3,
+  };
+  const values = ["aa", "bb", "cc", "dd"];
+  const session = newSession("bigrams", settings, [], { seed: 7, values });
+  const restored = hydratePracticeState({
+    source: "bigrams",
+    focusActive: true,
+    sessions: {
+      bigrams: {
+        seed: 7,
+        settings,
+        phraseIndex: 0,
+        wpms: [],
+        accuracies: [],
+        values,
+      },
+    },
+  });
+  assert.ok(restored);
+  assert.equal(restored.focusActive, true);
+  assert.deepEqual(restored.sessions.bigrams.phrases, session.phrases);
+  assert.deepEqual(restored.sessions.bigrams.values, values);
 });
 
 test("generates a non-empty phrase for each built-in practice preset", () => {
@@ -132,7 +224,7 @@ test("generates a non-empty phrase for each built-in practice preset", () => {
     { ...state.settings.bigrams, combination: 5, repetition: 2 },
     { ...state.settings.bigrams, combination: 20, repetition: 1 },
   ]) {
-    const phrases = generatePhrases("bigrams", settings, []);
+    const phrases = generatePhrases("bigrams", settings, [], { seed: 1 });
     assert.ok(phrases.length > 0);
     assert.ok(phrases.every(Boolean));
   }
@@ -202,7 +294,7 @@ test("ships English Phrases as natural, punctuated sentences", () => {
     combination: 20,
     repetition: 3,
   };
-  const phrases = generatePhrases("english_phrases", settings, []);
+  const phrases = generatePhrases("english_phrases", settings, [], { seed: 5 });
 
   assert.equal(englishPhrases.length, 2_000);
   assert.equal(new Set(englishPhrases).size, englishPhrases.length);

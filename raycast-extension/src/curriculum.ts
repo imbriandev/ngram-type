@@ -228,6 +228,7 @@ export function applyLesson(
     ...state,
     source: lesson.source,
     settings,
+    focusActive: false,
     sessions: {
       ...state.sessions,
       [lesson.source]: newSession(
