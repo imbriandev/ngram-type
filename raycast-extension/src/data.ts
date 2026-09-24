@@ -1,6 +1,9 @@
 // Source data copied from the original Ngram Type datasets.
 // See the repository root for the original attribution.
 
+export { englishCoreWords } from "./data/english-core.generated";
+export { englishPhrases } from "./data/english-phrases.generated";
+
 export const bigrams = [
   "th",
   "he",

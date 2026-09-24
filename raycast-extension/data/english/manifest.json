@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "banks": [
+    {
+      "id": "english_core",
+      "title": "English Core",
+      "language": "en",
+      "kind": "word_frequency",
+      "source": {
+        "name": "wordfreq",
+        "version": "3.1.1",
+        "url": "https://pypi.org/project/wordfreq/3.1.1/",
+        "license": "Apache-2.0"
+      },
+      "normalization": {
+        "lowercase": true,
+        "allowPattern": "^[a-z]+$",
+        "excludedTokens": [
+          "s", "d", "t", "m", "b", "c", "e", "f", "h", "l",
+          "n", "o", "p", "r", "u", "v", "w", "x", "y",
+          "g", "j", "k", "q", "z",
+          "al", "co", "de", "la", "re", "st", "ii", "mr", "dr", "tv",
+          "uk", "etc", "lol", "fuck", "fucking", "shit", "damn", "ass",
+          "fa", "ll", "mm", "dc", "jr", "hd", "dj", "ex", "ed", "bc",
+          "ft", "pp", "mp", "cm", "eh", "uh",
+          "ac", "ad", "ap", "ca", "cd", "da", "di", "du", "el", "em",
+          "en", "ep", "et", "eu", "fi", "hr", "il", "im", "iv", "km",
+          "le", "md", "mi", "mo", "ms", "na", "ny", "op", "pc", "pm",
+          "sa", "se", "th", "un", "va", "ve", "vs", "ya", "yo"
+        ],
+        "keptSingleLetters": ["a", "i"],
+        "keptSingleLettersNote": "Keep a and i for frequency; exclude other leftover single letters (g,j,k,q,z and earlier s,d,t,…)."
+      },
+      "count": 5000
+    },
+    {
+      "id": "english_phrases",
+      "title": "English Phrases",
+      "language": "en",
+      "kind": "curated_phrase",
+      "source": {
+        "name": "Ngram Type editorial bank",
+        "version": "2",
+        "license": "MIT"
+      },
+      "normalization": {
+        "preserveCase": true,
+        "preservePunctuation": true,
+        "minimumWords": 4,
+        "maximumWords": 16
+      },
+      "count": 2000
+    }
+  ]
+}

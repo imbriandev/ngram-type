@@ -14,13 +14,16 @@
       "name": "practice",
       "title": "Practice Ngrams",
       "description": "Train typing speed and accuracy with common n-grams",
-      "mode": "no-view"
+      "mode": "view"
     }
   ],
   "scripts": {
     "dev": "ray develop",
+    "build:data": "node scripts/build-english-core.mjs && node scripts/generate-english-phrases.mjs && node scripts/build-english-phrases.mjs",
+    "check:data": "node scripts/build-english-core.mjs --check && node scripts/build-english-phrases.mjs --check",
     "build": "ray build",
     "lint": "ray lint",
+    "test": "npm run check:data && tsc --outDir test-dist --declaration false --sourceMap false && node --test test-dist/test/*.test.js",
     "publish": "ray publish"
   },
   "dependencies": {
