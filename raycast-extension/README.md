@@ -18,10 +18,12 @@ Then open Raycast and run **Practice Ngrams**.
 - Use **Reset Phrase** (`⌘R`) to clear the phrase or **Change Dataset** (`⌘D`) from Actions.
 - Open **Actions** (`⌘K`) for settings, a new round, sound, or copying the phrase.
 - Choose a Warm-up, Build, or Flow preset in Settings; advanced controls appear only for Custom, and drafts are retained while switching datasets.
-- Use **English Core** for a ranked 5,000-word contemporary-English progression with scopes from Top 50 through Top 5,000.
-- Use **English Phrases** for 2,000 original sentences that practice capitalization, punctuation, apostrophes, and numbers in context.
+- Follow the **guided english-v1** curriculum (⌘L): Bigrams → Trigrams → Tetragrams → English Core, then optional English Phrases for sentence transfer.
+- **English Core** is a ranked ~5k bank; practice scopes stay Top 50–200.
+- **English Phrases** (optional, after Core 200) are 2,000 interleaved editorial sentences for capitalization, punctuation, and apostrophes.
+- Extension Preferences set cold-start mode (guided/free), default sound, and free-practice minimum WPM.
 - Typing, mistake, pass, and fail sounds can be toggled in **Settings**.
-- Lesson position, generated phrases, and average WPM are saved in Raycast LocalStorage and restored on the next launch.
+- Lesson position, seeded sessions, Focus bank, and light history are saved in Raycast LocalStorage and restored on the next launch.
 
 ## Publish
 
@@ -31,4 +33,4 @@ npm run build
 npm run publish
 ```
 
-The extension includes the original ngram and word datasets, **English Core**, a static 5,000-word bank generated offline from wordfreq 3.1.1, and **English Phrases**, an original 2,000-sentence editorial bank. Their provenance and normalization policy are recorded in [`data/english/manifest.json`](./data/english/manifest.json). Custom words are entered from **Settings**. Completion and threshold feedback stays inline, with optional sounds. Audio uses a warmed-up macOS AudioToolbox helper, avoiding a new process launch for every key; the extension targets Raycast on macOS. Run `npm test` to verify typing metrics, session transitions, state hydration, phrase generation, and generated data freshness.
+The extension includes the original ngram and word datasets, **English Core** (wordfreq 3.1.1 offline bank), and **English Phrases** (editorial v3 bank for late reflex transfer). Provenance lives in [`data/english/manifest.json`](./data/english/manifest.json). Guided curriculum, Focus-from-errors, and round history are documented in [`DESIGN.md`](./DESIGN.md). Custom words are entered from **Settings**. Audio uses a warmed-up macOS AudioToolbox helper. Run `npm test` to verify metrics, curriculum, seeded sessions, and generated data freshness.

@@ -301,9 +301,22 @@ test("ships English Phrases as natural, punctuated sentences", () => {
   assert.ok(
     englishPhrases.every((phrase) => /^[A-Z].*[.!?]["']?$/.test(phrase)),
   );
-  for (const mark of [",", ":", ";", "?", "!", "'", "-", "/"]) {
-    assert.ok(englishPhrases.some((phrase) => phrase.includes(mark)));
+  for (const mark of [",", ":", ";", "?", "!", "'", "-", '"']) {
+    assert.ok(
+      englishPhrases.some((phrase) => phrase.includes(mark)),
+      `expected punctuation ${JSON.stringify(mark)} in phrase bank`,
+    );
   }
+  assert.ok(
+    !englishPhrases.some((phrase) => /\/[A-Za-z0-9_-]+-\d+/.test(phrase)),
+    "phrase bank must not include /path-N junk",
+  );
+  assert.ok(
+    !englishPhrases.some(
+      (phrase) => /\ba [aeiou]/i.test(phrase) || /\ban [bcdfghjklmnpqrstvwxyz]/i.test(phrase),
+    ),
+    "phrase bank must use correct a/an",
+  );
   assert.ok(isPhraseSource("english_phrases"));
   assert.equal(isPhraseSource("english_core"), false);
   assert.deepEqual(

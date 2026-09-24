@@ -29,3 +29,9 @@ natural sentence transitions. Regenerate it with
 
 UI practice scopes for Core are capped at Top 50–200 even though the bank is ~5k.
 
+### English Phrases (Phase 3)
+
+Version **3** regenerates the 2,000-sentence bank with interleaved template
+families, a/an and plural agreement fixes, and no `/path-N` junk. Useful
+punctuation is retained for late transfer practice after Core 200.
+

@@ -91,7 +91,7 @@ export const sourceTitles: Record<Source, string> = {
   tetragrams: "Tetragrams",
   words: "Words (legacy)",
   english_core: "English Core",
-  english_phrases: "English Phrases (legacy)",
+  english_phrases: "English Phrases (optional)",
   custom_words: "Custom words",
 };
 
@@ -108,8 +108,9 @@ export const sources: Source[] = [
 
 /**
  * Default picker order for new users: Bigrams → Trigrams → Tetragrams →
- * English Core → Custom. Classic Words and English Phrases stay in `sources`
- * for hydrate / power users but are hidden from the default UI.
+ * English Core → Custom. Classic Words stay demoted. English Phrases stay
+ * demoted in the picker but are reachable via guided curriculum after Core 200
+ * (title labeled optional when shown).
  */
 export const defaultSources: Source[] = [
   "bigrams",

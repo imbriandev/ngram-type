@@ -54,7 +54,7 @@ const flow = {
 /**
  * Locked english-v1 track:
  * Bigrams 50 → 100 → Trigrams 50 → 100 → Tetragrams 50 → 100 →
- * English Core 50 → 100 → 200.
+ * English Core 50 → 100 → 200 → English Phrases 200 → 500 (optional late transfer).
  */
 export const ENGLISH_TRACK_V1: Lesson[] = [
   {
@@ -144,6 +144,26 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
     scope: 200,
     ...flow,
     minWPM: 50,
+    minAccuracy: 100,
+    next: "phrases-200-flow",
+  },
+  {
+    id: "phrases-200-flow",
+    title: "Phrases · Top 200 · Flow",
+    source: "english_phrases",
+    scope: 200,
+    ...flow,
+    minWPM: 40,
+    minAccuracy: 100,
+    next: "phrases-500-flow",
+  },
+  {
+    id: "phrases-500-flow",
+    title: "Phrases · Top 500 · Flow",
+    source: "english_phrases",
+    scope: 500,
+    ...flow,
+    minWPM: 40,
     minAccuracy: 100,
     next: null,
   },

@@ -67,9 +67,9 @@ Locked practice flow for new users:
 200 so practice stays inside the top frequency band. Hydrated scopes above 200
 (e.g. an old “Top 5000” setting) clamp down to 200.
 
-**Words** and **English Phrases** remain in code and hydrate correctly if already
-selected, but they are removed from the default dataset picker (legacy /
-advanced). New users should not see them in Settings or Change Dataset.
+**Words** remain demoted (legacy). **English Phrases** stay demoted in the
+default dataset picker but are reachable via guided curriculum after Core 200
+(labeled “optional” when shown). Hydration still works if already selected.
 
 Single-letter policy for Core: keep **a** and **i** for frequency; exclude other
 leftover single letters and junk digraphs listed in `data/english/manifest.json`.
@@ -87,14 +87,16 @@ Default practice follows the locked **english-v1** track (see `src/curriculum.ts
 7. English Core Top 50 · Build · 40 WPM
 8. English Core Top 100 · Flow (20×1) · 45 WPM
 9. English Core Top 200 · Flow · 50 WPM
+10. English Phrases Top 200 · Flow · 40 WPM (optional late transfer)
+11. English Phrases Top 500 · Flow · 40 WPM
 
 All lessons require **100% accuracy** (enforced by the existing phrase-complete gate). Progress is stored separately under LocalStorage key `ngram-type-progress` (`currentLessonId`, `completedLessonIds`, `bestWpmByLesson`).
 
 UX:
 
 - Navigation title shows the lesson title plus phrase index (e.g. `Bi · Top 50 · Warm-up · 3/25`).
-- Practice Form shows a **Track** progress line (`Guided · 1/9 · N done · … → next: …`, or free-mode resume hint).
-- **Open Curriculum** (⌘L) pushes a List of all 9 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint.
+- Practice Form shows a **Track** progress line (`Guided · 1/11 · N done · … → next: …`, or free-mode resume hint).
+- **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint.
 - Finishing a round at or above the lesson’s min WPM marks the lesson complete and suggests **Next lesson** in status text; advance is an Action, not forced.
 - Action Panel: **Open Curriculum**, **Resume Guided Track** (when free), **Next Lesson**, **Retry Lesson**, **Jump to Free Practice**.
 - Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset or saving mismatched settings leaves guided mode.
@@ -115,3 +117,44 @@ LocalStorage key `ngram-type-focus`. Wrong keystrokes and failed phrase attempts
 
 LocalStorage key `ngram-type-history`, append-only, cap 100. Each finished round stores date, lessonId/source (or `focus`), scope, avg WPM, accuracy. **Open History** (⌘⇧H) pushes a simple List.
 
+## Phase 3 — phrases + polish
+
+### Phrase bank (manifest v3)
+
+Regenerated `english-phrases-2000.txt` for reflex transfer:
+
+- Interleave template families so Top 50/100 scopes mix shapes (not 100× one family).
+- Fix **a/an** and singular/plural count agreement.
+- Drop tautology loops and `/path-N` junk templates.
+- Broader lexicon; keep useful punctuation (`? ! ' -- : ; , "`).
+
+Rebuild: `npm run build:data` (generate + build scripts). Provenance in
+`data/english/manifest.json` (`english_phrases` source version **3**).
+
+### Optional Phrases stage
+
+After Core 200 the track continues:
+
+- `phrases-200-flow` — English Phrases Top 200 · Flow · 40 WPM · 100% accuracy
+- `phrases-500-flow` — English Phrases Top 500 · Flow · 40 WPM · 100% accuracy
+
+Bi→Core ordering is unchanged. Phrases stay out of `defaultSources` but appear
+in the picker when the active source is Phrases (curriculum Start Lesson).
+
+### Raycast Preferences
+
+`package.json` preferences (cold start only when LocalStorage is empty):
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `defaultMode` | dropdown `guided`\|`free` | `guided` | Initial curriculum mode |
+| `soundEnabled` | checkbox | true | Initial sound toggle |
+| `defaultMinWPM` | textfield | `40` | Free-practice min WPM on cold start |
+
+Guided lesson thresholds still come from the track. Saved sessions/progress win
+over preferences after the first run.
+
+### Store polish
+
+Richer extension `description`, `keywords` (typing, ngram, wpm, practice, …),
+and command blurb reflecting guided curriculum + optional phrase transfer.

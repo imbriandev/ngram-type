@@ -21,7 +21,7 @@ import {
 import { createPracticeState } from "../src/logic";
 
 test("english-v1 track chains every lesson through next links", () => {
-  assert.equal(ENGLISH_TRACK_V1.length, 9);
+  assert.equal(ENGLISH_TRACK_V1.length, 11);
   assert.equal(firstLesson().id, "bi-50-warmup");
   assert.equal(ENGLISH_TRACK_V1.at(-1)?.next, null);
 
@@ -40,13 +40,15 @@ test("english-v1 track chains every lesson through next links", () => {
     ENGLISH_TRACK_V1.map((lesson) => lesson.id),
   );
   assert.equal(getLesson("missing"), undefined);
-  assert.equal(nextLesson("core-200-flow"), undefined);
+  assert.equal(nextLesson("core-200-flow")?.id, "phrases-200-flow");
+  assert.equal(nextLesson("phrases-500-flow"), undefined);
 });
 
 test("english-v1 lessons use Warm-up → Build → Flow with accuracy 100", () => {
   const early = ENGLISH_TRACK_V1.slice(0, 3);
   const mid = ENGLISH_TRACK_V1.slice(3, 7);
-  const late = ENGLISH_TRACK_V1.slice(7);
+  const coreFlow = ENGLISH_TRACK_V1.slice(7, 9);
+  const phrasesFlow = ENGLISH_TRACK_V1.slice(9);
 
   for (const lesson of early) {
     assert.equal(lesson.preset, "warm_up");
@@ -61,11 +63,19 @@ test("english-v1 lessons use Warm-up → Build → Flow with accuracy 100", () =
     assert.equal(lesson.repetition, 2);
     assert.equal(lesson.minAccuracy, 100);
   }
-  for (const lesson of late) {
+  for (const lesson of coreFlow) {
     assert.equal(lesson.preset, "flow");
     assert.equal(lesson.combination, 20);
     assert.equal(lesson.repetition, 1);
     assert.ok(lesson.minWPM >= 45);
+    assert.equal(lesson.minAccuracy, 100);
+  }
+  for (const lesson of phrasesFlow) {
+    assert.equal(lesson.preset, "flow");
+    assert.equal(lesson.source, "english_phrases");
+    assert.equal(lesson.combination, 20);
+    assert.equal(lesson.repetition, 1);
+    assert.equal(lesson.minWPM, 40);
     assert.equal(lesson.minAccuracy, 100);
   }
 
@@ -81,6 +91,8 @@ test("english-v1 lessons use Warm-up → Build → Flow with accuracy 100", () =
       ["english_core", 50],
       ["english_core", 100],
       ["english_core", 200],
+      ["english_phrases", 200],
+      ["english_phrases", 500],
     ],
   );
 });
@@ -90,7 +102,7 @@ test("isGuidedSource covers track datasets only", () => {
   assert.equal(isGuidedSource("english_core"), true);
   assert.equal(isGuidedSource("custom_words"), false);
   assert.equal(isGuidedSource("words"), false);
-  assert.equal(isGuidedSource("english_phrases"), false);
+  assert.equal(isGuidedSource("english_phrases"), true);
 });
 
 test("lessonForSourceSettings matches drill shape", () => {
@@ -180,14 +192,14 @@ test("formatTrackProgressDescription covers guided and free modes", () => {
   const guided = createProgress("bi-50-warmup");
   assert.match(
     formatTrackProgressDescription(guided),
-    /^Guided · 1\/9 · 0 done · Bi · Top 50 · Warm-up → next: Bi · Top 100 · Warm-up$/,
+    /^Guided · 1\/11 · 0 done · Bi · Top 50 · Warm-up → next: Bi · Top 100 · Warm-up$/,
   );
 
   guided.completedLessonIds = ["bi-50-warmup"];
   guided.currentLessonId = "bi-100-warmup";
   assert.match(
     formatTrackProgressDescription(guided),
-    /^Guided · 2\/9 · 1 done · Bi · Top 100 · Warm-up → next: Tri · Top 50 · Warm-up$/,
+    /^Guided · 2\/11 · 1 done · Bi · Top 100 · Warm-up → next: Tri · Top 50 · Warm-up$/,
   );
 
   const free = createProgress("tri-50-warmup");
@@ -197,7 +209,7 @@ test("formatTrackProgressDescription covers guided and free modes", () => {
     "Free practice · Resume Guided Track from Actions",
   );
 
-  const last = createProgress("core-200-flow");
+  const last = createProgress("phrases-500-flow");
   last.completedLessonIds = ENGLISH_TRACK_V1.map((lesson) => lesson.id);
   assert.match(
     formatTrackProgressDescription(last),
@@ -208,6 +220,7 @@ test("formatTrackProgressDescription covers guided and free modes", () => {
 test("lessonIndex and formatLessonSubtitle describe track entries", () => {
   assert.equal(lessonIndex("bi-50-warmup"), 1);
   assert.equal(lessonIndex("core-200-flow"), 9);
+  assert.equal(lessonIndex("phrases-500-flow"), 11);
   assert.equal(lessonIndex("missing"), 0);
 
   const lesson = getLesson("tetra-100-build");

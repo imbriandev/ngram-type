@@ -7,6 +7,7 @@ import {
   List,
   LocalStorage,
   environment,
+  getPreferenceValues,
   useNavigation,
 } from "@raycast/api";
 import { spawn } from "node:child_process";
@@ -72,6 +73,36 @@ import {
 } from "./curriculum";
 
 const STORAGE_KEY = "ngram-type-state";
+
+type ExtensionPrefs = {
+  defaultMode: string;
+  soundEnabled: boolean;
+  defaultMinWPM: string;
+};
+
+function readColdStartPreferences(): {
+  mode: "guided" | "free";
+  soundEnabled: boolean;
+  defaultMinWPM: number | null;
+} {
+  try {
+    const prefs = getPreferenceValues<ExtensionPrefs>();
+    const mode = prefs.defaultMode === "free" ? "free" : "guided";
+    const parsed = Number.parseInt(String(prefs.defaultMinWPM ?? "40"), 10);
+    const defaultMinWPM =
+      Number.isFinite(parsed) && parsed >= 1 && parsed <= 2_000
+        ? Math.round(parsed)
+        : null;
+    return {
+      mode,
+      soundEnabled: prefs.soundEnabled !== false,
+      defaultMinWPM,
+    };
+  } catch {
+    return { mode: "guided", soundEnabled: true, defaultMinWPM: null };
+  }
+}
+
 const soundFiles = {
   key: "click.wav",
   error: "clack.wav",
@@ -264,6 +295,26 @@ export default function Practice() {
         nextHistory = hydrateHistory(savedHistory);
       } catch {
         nextHistory = createHistory();
+      }
+
+      const isColdStart = !rawState && !rawProgress;
+      if (isColdStart) {
+        const prefs = readColdStartPreferences();
+        nextProgress = { ...createProgress(), mode: prefs.mode };
+        const settings = { ...nextState.settings };
+        if (prefs.defaultMinWPM !== null) {
+          for (const source of sources) {
+            settings[source] = {
+              ...settings[source],
+              minimumWPM: prefs.defaultMinWPM,
+            };
+          }
+        }
+        nextState = {
+          ...nextState,
+          soundEnabled: prefs.soundEnabled,
+          settings,
+        };
       }
 
       if (nextProgress.mode === "guided" && !nextState.focusActive) {
