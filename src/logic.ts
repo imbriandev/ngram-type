@@ -52,6 +52,8 @@ export type PracticeState = {
   version: number;
   source: Source;
   soundEnabled: boolean;
+  /** Click on correct keystrokes (off by default; mistakes always sound). */
+  keystrokeClicks: boolean;
   settings: Record<Source, SourceSettings>;
   customWords: string[];
   sessions: Record<Source, Session>;
@@ -305,6 +307,7 @@ export function serializePracticeState(state: PracticeState) {
     version: state.version,
     source: state.source,
     soundEnabled: state.soundEnabled,
+    keystrokeClicks: state.keystrokeClicks,
     settings: state.settings,
     customWords: state.customWords,
     sessions,
@@ -470,6 +473,7 @@ export function createPracticeState(): PracticeState {
     version: STATE_VERSION,
     source: "bigrams",
     soundEnabled: true,
+    keystrokeClicks: false,
     settings,
     customWords: [],
     sessions,
@@ -540,6 +544,7 @@ export function hydratePracticeState(value: unknown): PracticeState | null {
       typeof value.soundEnabled === "boolean"
         ? value.soundEnabled
         : fresh.soundEnabled,
+    keystrokeClicks: value.keystrokeClicks === true,
     settings,
     customWords,
     sessions,

@@ -27,7 +27,9 @@
   editorial bank (2,000 sentences with capitalization and punctuation).
 - Free practice with Warm-up / Build / Flow presets, per-dataset settings,
   Custom Words, and Change Dataset (`⌘D`).
-- Preferences for default mode (guided/free), sound effects, and a default WPM
-  goal for free practice; typing, mistake, pass, and fail sounds (`⌘⇧M` to
-  mute).
+- Preferences for default mode (guided/free), sound effects, keystroke clicks
+  (off by default), and a default WPM goal for free practice.
+- Sounds: mistake clack, a soft cue the first time a phrase drops below the
+  accuracy goal, Tink per passed phrase, fail sound, and a short ding only for
+  a passed lesson or finished Focus round (`⌘⇧M` mutes all).
 - Toasts when guided mode is left implicitly, with the Resume Guided shortcut.

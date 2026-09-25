@@ -78,9 +78,18 @@
       "type": "checkbox",
       "required": false,
       "title": "Sound Effects",
-      "label": "Enable typing sounds on first launch",
-      "description": "Initial sound setting on first launch. Toggle anytime with ⌘⇧M.",
+      "label": "Play sound effects",
+      "description": "Initial setting on first launch: mistake, will-repeat, pass, fail, and lesson-complete sounds. Later, mute with ⌘⇧M or change it in Practice Settings.",
       "default": true
+    },
+    {
+      "name": "keystrokeClicks",
+      "type": "checkbox",
+      "required": false,
+      "title": "Keystroke Clicks",
+      "label": "Click on every correct keystroke",
+      "description": "Initial setting on first launch (off by default, so mistakes stand out). Later, change it in Practice Settings.",
+      "default": false
     },
     {
       "name": "defaultMinWPM",

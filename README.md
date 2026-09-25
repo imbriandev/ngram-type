@@ -40,6 +40,23 @@ Open the Action Panel (`⌘K`) at any time to see every action.
   **Round complete**), with a **Next Lesson** button when the next lesson is
   unlocked.
 
+## Sounds
+
+With **Sound effects** on (default):
+
+| Event                                        | Sound                                    |
+| -------------------------------------------- | ---------------------------------------- |
+| Mistyped key (or paste attempt)              | Clack                                    |
+| First key that drops a phrase below the goal | Soft low cue (Basso)                     |
+| Phrase passed                                | Tink                                     |
+| Phrase failed (it will repeat)               | Fail sound                               |
+| Lesson passed, or Focus round finished       | Ding                                     |
+| Correct key                                  | Click, only with **Keystroke clicks** on |
+
+A finished round that doesn't pass the lesson plays Tink, not the ding. Only
+one sound plays per keystroke. `⌘⇧M` mutes everything; both switches are also
+in **Practice Settings**.
+
 ## Guided curriculum
 
 Open it with **Open Curriculum** (`⌘L`). Lessons are grouped into N-grams,
@@ -96,7 +113,7 @@ confirmation.
 | `⌘⇧↵`    | Secondary action (New Round, or Reset Phrase when Next Lesson is first) |
 | `⌘⇧N`    | Next Lesson (when unlocked)                                             |
 | `⌘⇧R`    | New Round                                                               |
-| `⌘⇧M`    | Mute / Enable Typing Sounds                                             |
+| `⌘⇧M`    | Mute Sounds / Unmute Sounds                                             |
 | `⌘L`     | Open Curriculum                                                         |
 | `⌘⇧G`    | Resume Guided Track (in free practice)                                  |
 | `⌘⇧L`    | Retry Lesson (fresh round)                                              |
@@ -116,8 +133,11 @@ Found under Raycast Settings → Extensions → Ngram Type:
 
 - **Default Mode**: Guided Curriculum (default) or Free Practice. Used on first
   launch, before any progress is saved.
-- **Sound Effects**: typing, mistake, pass, and fail sounds. Used on first
-  launch; toggle anytime with `⌘⇧M`.
+- **Sound Effects** (on by default): mistake, will-repeat, pass, fail, and
+  lesson-complete sounds. Used on first launch; later mute with `⌘⇧M` or change
+  it in Practice Settings.
+- **Keystroke Clicks** (off by default): also click on every correct
+  keystroke. Used on first launch; later change it in Practice Settings.
 - **Default WPM Goal** (20–100): the free-practice goal when you haven't set
   your own in Practice Settings. Guided lessons use their own goals. Applies
   immediately.

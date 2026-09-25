@@ -108,7 +108,7 @@ UX:
 - **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons grouped into List.Sections (N-grams / English Core / Phrases (optional), each with an "x/y done" subtitle). The current lesson is preselected; rows show full titles (`Bigrams · Top 50`), preset + drill subtitle, goal WPM and Best WPM; icons are a green check (done), play (current), or circle (upcoming). Any lesson can be started; **Resume Current** returns to the checkpoint without regenerating an in-progress round (`ensureLessonSession`).
 - Finishing a round at or above the lesson’s min WPM marks the lesson complete and shows a success toast with a **Next Lesson** action; advance is an Action (`⌘↵` once complete, `⌘⇧N` always), not forced. Otherwise a “Round complete” toast shows the lesson’s WPM goal.
 - Action Panel sections: Practice (Next Lesson ⌘⇧N, Reset Phrase ⌘↵, New Round ⌘⇧R, Mute ⌘⇧M), Curriculum (Open Curriculum ⌘L, Resume Guided Track ⌘⇧G, Retry Lesson ⌘⇧L, Jump to Free Practice ⌘⇧J), Review (Practice Focus Bank / Exit Focus ⌘⇧E, Open Focus Bank ⌘⇧B, Open History ⌘⇧H), Configure (Practice Settings ⌘E, Change Dataset… ⌘D). No Raycast-reserved shortcuts (⌘⇧F Add to Favorites etc.) are used.
-- Sounds: a soft tick per passed phrase, the ding only at round/lesson end.
+- Sounds (rules in `src/sounds.ts`, unit-tested): mistake clack; Basso cue instead of the clack on the first keystroke that drops the phrase below the accuracy goal; Tink per passed phrase, including a finished round that didn't pass the lesson; fail sound; ding (0.75 s, −6 dB) only for a passed lesson or finished Focus round; correct-key click only with Keystroke Clicks on (default off). At most one sound per event. One long-lived `osascript` JXA helper plays AudioToolbox system sounds; stdin errors drop the helper, and a failed spawn disables sound for the session.
 - **Goals:** Settings edits the user's WPM/accuracy goal (`state.goals`), which lessons never overwrite. Guided uses max(user goal, lesson goal), or the lesson goal when unset (“Lesson default”); free/Focus uses the user goal or the dataset default. The Goal row labels the source (`yours` / `lesson` / `default`). Changing only a goal keeps guided mode; lesson matching compares drill shape only. Pre-v7 saved goals that differ from the lesson/default migrate to the user goal.
 - Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset, starting Focus, or saving mismatched settings leaves guided mode with a “Left guided track” toast (resume with ⌘⇧G).
 
@@ -154,13 +154,14 @@ in the picker when the active source is Phrases (curriculum Start Lesson).
 
 ### Raycast Preferences
 
-`package.json` preferences (cold start only when LocalStorage is empty):
+`package.json` preferences:
 
-| Key             | Type                      | Default  | Effect                              |
-| --------------- | ------------------------- | -------- | ----------------------------------- |
-| `defaultMode`   | dropdown `guided`\|`free` | `guided` | Initial curriculum mode             |
-| `soundEnabled`  | checkbox                  | true     | Initial sound toggle                |
-| `defaultMinWPM` | textfield                 | `40`     | Free-practice min WPM on cold start |
+| Key               | Type                      | Default  | Effect                                               |
+| ----------------- | ------------------------- | -------- | ---------------------------------------------------- |
+| `defaultMode`     | dropdown `guided`\|`free` | `guided` | Initial curriculum mode (first launch only)          |
+| `soundEnabled`    | checkbox                  | true     | Initial sound effects toggle (first launch only)     |
+| `keystrokeClicks` | checkbox                  | false    | Initial correct-key click toggle (first launch only) |
+| `defaultMinWPM`   | dropdown 20–100           | `40`     | Free-practice goal when no user goal is set (live)   |
 
 Guided lesson thresholds still come from the track. Saved sessions/progress win
 over preferences after the first run.
@@ -175,7 +176,7 @@ and command blurb reflecting guided curriculum + optional phrase transfer.
 Daily checklist for Brian after `ray develop` / install:
 
 1. Open **Practice Ngrams** — guided track should land on the current lesson (cold start: Bi · Top 50 · Warm-up).
-2. **Preferences** (Raycast → Extensions → Ngram Type): default mode, sound, free-practice min WPM (cold start only).
+2. **Preferences** (Raycast → Extensions → Ngram Type): default mode, sound effects, keystroke clicks (first launch only), default WPM goal (live).
 3. **Curriculum** `⌘L` — 11 english-v1 lessons; Start / Resume Current.
 4. While typing, **⌘↵** = Reset Phrase (Form primary action); **Next Lesson** takes ⌘↵ once the lesson is complete (also ⌘⇧N).
 5. **Practice Focus Bank** `⌘⇧E` — empty until misses accumulate; then Warm-up-style drill from the bank.

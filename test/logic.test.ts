@@ -180,6 +180,8 @@ test("hydrates a malformed saved state into a safe session", () => {
   assert.ok(restored);
   assert.equal(restored.source, "words");
   assert.equal(restored.soundEnabled, false);
+  // Saved state from before Keystroke Clicks existed migrates to off.
+  assert.equal(restored.keystrokeClicks, false);
   assert.deepEqual(restored.customWords, ["alpha", "beta"]);
   assert.deepEqual(restored.settings.words, {
     scope: 50,
@@ -510,4 +512,15 @@ test("ships English Phrases as natural, punctuated sentences", () => {
   );
   assert.equal(phrases.length, 50);
   assert.ok(phrases.every((phrase) => englishPhrases.includes(phrase)));
+});
+
+test("keystrokeClicks defaults off and round-trips through serialize/hydrate", () => {
+  const fresh = createPracticeState();
+  assert.equal(fresh.keystrokeClicks, false);
+  const on = { ...fresh, keystrokeClicks: true };
+  const restored = hydratePracticeState(
+    JSON.parse(JSON.stringify(serializePracticeState(on))),
+  );
+  assert.ok(restored);
+  assert.equal(restored.keystrokeClicks, true);
 });

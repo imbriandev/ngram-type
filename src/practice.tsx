@@ -17,6 +17,12 @@ import {
 } from "@raycast/api";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import {
+  Sound,
+  crossedRepeatThreshold,
+  keystrokeSound,
+  phrasePassSound,
+} from "./sounds";
 import { useEffect, useRef, useState } from "react";
 import {
   availableScopes,
@@ -91,15 +97,19 @@ const SHORTCUT_EXIT_FOCUS = "⌘⇧E";
 
 const STORAGE_KEY = "ngram-type-state";
 
+type SoundSettings = { soundEnabled: boolean; keystrokeClicks: boolean };
+
 type ExtensionPrefs = {
   defaultMode: string;
   soundEnabled: boolean;
+  keystrokeClicks: boolean;
   defaultMinWPM: string;
 };
 
 function readColdStartPreferences(): {
   mode: "guided" | "free";
   soundEnabled: boolean;
+  keystrokeClicks: boolean;
   defaultMinWPM: number | null;
 } {
   try {
@@ -113,10 +123,16 @@ function readColdStartPreferences(): {
     return {
       mode,
       soundEnabled: prefs.soundEnabled !== false,
+      keystrokeClicks: prefs.keystrokeClicks === true,
       defaultMinWPM,
     };
   } catch {
-    return { mode: "guided", soundEnabled: true, defaultMinWPM: null };
+    return {
+      mode: "guided",
+      soundEnabled: true,
+      keystrokeClicks: false,
+      defaultMinWPM: null,
+    };
   }
 }
 
@@ -127,9 +143,10 @@ const soundFiles = {
   fail: "failed.mp3",
   /** Softer per-phrase pass; the ding is kept for round/lesson completion. */
   phrase: "/System/Library/Sounds/Tink.aiff",
-} as const;
+  /** Soft cue when a phrase first drops below the accuracy goal. */
+  repeat: "/System/Library/Sounds/Basso.aiff",
+} satisfies Record<Sound, string>;
 
-type Sound = keyof typeof soundFiles;
 type AudioProcess = ReturnType<typeof spawn>;
 type PracticeStyle = "warm_up" | "build" | "flow" | "custom";
 
@@ -142,9 +159,11 @@ const practiceStyles: Record<
   flow: { title: "Flow · 20 items × 1", combination: 20, repetition: 1 },
 };
 let audioProcess: AudioProcess | null = null;
+/** Set when the helper fails to start; don't respawn it on every keystroke. */
+let audioUnavailable = false;
 
 function startAudio() {
-  if (audioProcess) return;
+  if (audioProcess || audioUnavailable) return;
   const paths = Object.fromEntries(
     Object.entries(soundFiles).map(([name, file]) => [
       name,
@@ -183,6 +202,11 @@ function startAudio() {
   );
   audioProcess = process;
   process.on("error", () => {
+    audioUnavailable = true;
+    if (audioProcess === process) audioProcess = null;
+  });
+  // EPIPE if the helper died: drop it; the next sound starts a fresh one.
+  process.stdin?.on("error", () => {
     if (audioProcess === process) audioProcess = null;
   });
   process.on("exit", () => {
@@ -195,8 +219,8 @@ function stopAudio() {
   audioProcess = null;
 }
 
-function playSound(sound: Sound, enabled: boolean) {
-  if (!enabled) return;
+function playSound(sound: Sound | null, enabled: boolean) {
+  if (!sound || !enabled) return;
   startAudio();
   audioProcess?.stdin?.write(`${sound}\n`);
 }
@@ -363,6 +387,7 @@ export default function Practice() {
           nextState = {
             ...nextState,
             soundEnabled: prefs.soundEnabled,
+            keystrokeClicks: prefs.keystrokeClicks,
             settings,
           };
         }
@@ -696,7 +721,14 @@ export default function Practice() {
 
     setCurrentMetrics(result);
     setLastResult(result);
-    playSound(finishedRound ? "pass" : "phrase", state.soundEnabled);
+    playSound(
+      phrasePassSound({
+        finishedRound,
+        lessonPassed,
+        focusRound: state.focusActive,
+      }),
+      state.soundEnabled,
+    );
     setTyped("");
     setStartedAt(null);
     setAttempt(createAttempt());
@@ -744,9 +776,19 @@ export default function Practice() {
     const nextAttempt = recordAttempt(attempt, expected, edit);
     const isWrong = !expected.startsWith(next);
     const completesPhrase = next.trimEnd() === expected;
-    if (next.length > typed.length && !completesPhrase) {
-      playSound(isWrong ? "error" : "key", state.soundEnabled);
-    }
+    playSound(
+      keystrokeSound({
+        grew: next.length > typed.length,
+        completesPhrase,
+        isWrong,
+        crossedRepeat: crossedRepeatThreshold(
+          willRepeatPhrase(attempt, goal.minimumAccuracy),
+          willRepeatPhrase(nextAttempt, goal.minimumAccuracy),
+        ),
+        keystrokeClicks: state.keystrokeClicks,
+      }),
+      state.soundEnabled,
+    );
     setTyped(next);
     setAttempt(nextAttempt);
     setInputNotice(null);
@@ -869,7 +911,7 @@ export default function Practice() {
     source: Source,
     nextSettings: Record<Source, SourceSettings>,
     customWords: string[],
-    soundEnabled: boolean,
+    sound: SoundSettings,
     goals: UserGoals,
   ) {
     setStatus("New settings ready");
@@ -906,7 +948,8 @@ export default function Practice() {
       return {
         ...previous,
         source,
-        soundEnabled,
+        soundEnabled: sound.soundEnabled,
+        keystrokeClicks: sound.keystrokeClicks,
         customWords,
         goals,
         settings: nextSettings,
@@ -979,11 +1022,7 @@ export default function Practice() {
                 onAction={restartRound}
               />
               <Action
-                title={
-                  state.soundEnabled
-                    ? "Mute Typing Sounds"
-                    : "Enable Typing Sounds"
-                }
+                title={state.soundEnabled ? "Mute Sounds" : "Unmute Sounds"}
                 icon={state.soundEnabled ? Icon.SpeakerOff : Icon.SpeakerOn}
                 shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
                 onAction={toggleSound}
@@ -1085,7 +1124,10 @@ export default function Practice() {
                   source={state.source}
                   settings={state.settings}
                   customWords={state.customWords}
-                  soundEnabled={state.soundEnabled}
+                  sound={{
+                    soundEnabled: state.soundEnabled,
+                    keystrokeClicks: state.keystrokeClicks,
+                  }}
                   goals={state.goals}
                   lessonGoal={guided?.minWPM}
                   freeDefaultWPM={freeDefaultWPM}
@@ -1400,7 +1442,7 @@ function SettingsForm({
   source,
   settings,
   customWords,
-  soundEnabled,
+  sound,
   goals,
   lessonGoal,
   freeDefaultWPM,
@@ -1409,7 +1451,7 @@ function SettingsForm({
   source: Source;
   settings: Record<Source, SourceSettings>;
   customWords: string[];
-  soundEnabled: boolean;
+  sound: SoundSettings;
   goals: UserGoals;
   lessonGoal?: number;
   freeDefaultWPM: number;
@@ -1417,7 +1459,7 @@ function SettingsForm({
     source: Source,
     settings: Record<Source, SourceSettings>,
     customWords: string[],
-    soundEnabled: boolean,
+    sound: SoundSettings,
     goals: UserGoals,
   ) => void;
 }) {
@@ -1492,7 +1534,10 @@ function SettingsForm({
       selectedSource,
       preparedSettings,
       custom,
-      values.soundEnabled !== false,
+      {
+        soundEnabled: values.soundEnabled !== false,
+        keystrokeClicks: values.keystrokeClicks === true,
+      },
       goalDraft,
     );
   }
@@ -1667,9 +1712,15 @@ function SettingsForm({
       </Form.Dropdown>
       <Form.Checkbox
         id="soundEnabled"
-        label="Typing sounds"
-        defaultValue={soundEnabled}
-        info="Key, mistake, pass, and retry feedback"
+        label="Sound effects"
+        defaultValue={sound.soundEnabled}
+        info="Mistake, will-repeat, pass, fail, and lesson-complete sounds (⌘⇧M mutes them all)"
+      />
+      <Form.Checkbox
+        id="keystrokeClicks"
+        label="Keystroke clicks"
+        defaultValue={sound.keystrokeClicks}
+        info="Also click on every correct keystroke (needs Sound effects on)"
       />
     </Form>
   );
