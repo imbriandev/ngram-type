@@ -26,7 +26,10 @@ feedback.
 - Report a mismatch on the input itself. Never interrupt typing with a toast;
   toasts appear only at round boundaries (round/lesson complete, Focus done)
   or when guided mode is left implicitly.
-- At a 100% accuracy goal, the first wrong key fails and restarts the phrase.
+- Never clear the input on a mistake: show `Expected "x"` inline, correct with
+  Backspace, and judge pass/fail at the end of the phrase. Once live accuracy
+  is below the goal, add a short “this phrase will repeat” note (error text
+  while wrong, Feedback row after correction).
 - Return is not a keystroke (stripped from input). The Form primary action is
   `⌘↵` (Reset Phrase, or Next Lesson once the lesson is complete).
 - Complete phrases automatically; do not require a submit action.

@@ -25,10 +25,10 @@ import {
   exitFocus,
   FOCUS_GENERATION_SOURCE,
   hydratePracticeState,
-  instantFailIndex,
   isPhraseSource,
   metrics,
   newSession,
+  phrasePasses,
   PracticeState,
   recordAttempt,
   sanitizeTypedInput,
@@ -39,6 +39,7 @@ import {
   sourcesForPicker,
   sourceTitles,
   startFocus,
+  willRepeatPhrase,
 } from "./logic";
 import {
   FOCUS_STORAGE_KEY,
@@ -386,17 +387,21 @@ export default function Practice() {
   const hasPhrase = Boolean(expected);
   const matchingCharacters = matchingPrefixLength(expected, typed);
   const hasMistake = matchingCharacters < typed.length;
+  // Accuracy can't recover once below the goal, so flag the repeat early.
+  const willRepeat =
+    startedAt !== null && willRepeatPhrase(attempt, settings.minimumAccuracy);
+  const repeatNote = `below ${settings.minimumAccuracy}% — this phrase will repeat`;
   const feedback = inputNotice
     ? inputNotice
     : hasMistake
       ? `Fix character ${matchingCharacters + 1} · ${currentMetrics.accuracy}% accuracy`
       : startedAt
-        ? `${typed.length}/${expected.length} characters · ${currentMetrics.accuracy}% accuracy`
+        ? `${typed.length}/${expected.length} characters · ${currentMetrics.accuracy}% accuracy${willRepeat ? ` · ${repeatNote}` : ""}`
         : status;
   const typingError =
     inputNotice ??
     (hasMistake
-      ? `Expected ${readableCharacter(expected[matchingCharacters])}`
+      ? `Expected ${readableCharacter(expected[matchingCharacters])}${willRepeat ? ` · ${repeatNote}` : ""}`
       : undefined);
 
   function resetPhrase(message = "Phrase reset") {
@@ -459,10 +464,7 @@ export default function Practice() {
       completedAttempt,
     );
 
-    if (
-      result.wpm < settings.minimumWPM ||
-      result.accuracy < settings.minimumAccuracy
-    ) {
+    if (!phrasePasses(result, settings)) {
       // Failed attempt: misses were already banked per keystroke; a slow but
       // clean phrase banks nothing.
       setCurrentMetrics(result);
@@ -628,17 +630,12 @@ export default function Practice() {
   }
 
   /**
-   * Set the controlled input. When state already equals `value` but the field
-   * shows something else (e.g. a stripped newline), render `shown` once so
-   * Raycast receives a real value change and the field resyncs.
+   * Resync the controlled input after a stripped newline: state already equals
+   * `value`, so render `shown` once to give Raycast a real value change.
    */
-  function setInput(value: string, shown: string) {
-    if (value === typed && shown !== value) {
-      setTyped(shown);
-      setTimeout(() => setTyped(value), 0);
-    } else {
-      setTyped(value);
-    }
+  function resyncInput(value: string, shown: string) {
+    setTyped(shown);
+    setTimeout(() => setTyped(value), 0);
   }
 
   function handleChange(value: string) {
@@ -646,7 +643,7 @@ export default function Practice() {
     // Return/newlines never count as keystrokes (primary action is ⌘↵).
     const next = sanitizeTypedInput(value);
     if (next === typed) {
-      if (value !== next) setInput(next, value);
+      if (value !== next) resyncInput(next, value);
       return;
     }
     if (!next) {
@@ -663,26 +660,6 @@ export default function Practice() {
 
     // Only real mistyped characters go to the Focus bank.
     setFocusBank((previous) => recordKeystrokeMiss(previous, expected, edit));
-
-    const missIndex = instantFailIndex(
-      expected,
-      edit,
-      settings.minimumAccuracy,
-    );
-    if (missIndex !== null) {
-      // 100% goal: the first wrong key fails the phrase; restart immediately.
-      playSound("fail", state.soundEnabled);
-      setInput("", next);
-      setStartedAt(null);
-      setAttempt(createAttempt());
-      setLastResult(null);
-      setCurrentMetrics(metrics(expected, "", null));
-      const notice = `Missed ${readableCharacter(expected[missIndex])} at char ${missIndex + 1} — restart`;
-      setInputNotice(notice);
-      setStatus(notice);
-      completing.current = false;
-      return;
-    }
 
     const beganAt = startedAt ?? Date.now();
     if (!startedAt) {

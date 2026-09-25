@@ -314,16 +314,28 @@ export function sanitizeTypedInput(value: string): string {
 }
 
 /**
- * At a 100% accuracy goal, the first wrong keystroke fails the phrase.
- * Returns the 0-based character index that was missed, or null.
+ * Accuracy counts every keystroke, including corrected mistakes, so once the
+ * live accuracy is below the goal the phrase is certain to repeat. Used for
+ * an early, non-blocking hint while typing.
  */
-export function instantFailIndex(
-  expected: string,
-  edit: TextEdit,
+export function willRepeatPhrase(
+  attempt: Attempt,
   minimumAccuracy: number,
-): number | null {
-  if (minimumAccuracy < 100 || edit.inserted.length !== 1) return null;
-  return expected[edit.index] === edit.inserted ? null : edit.index;
+): boolean {
+  const total = attempt.correctKeystrokes + attempt.wrongKeystrokes;
+  if (total === 0) return false;
+  return (attempt.correctKeystrokes / total) * 100 < minimumAccuracy;
+}
+
+/** End-of-phrase gate: failing phrases repeat; passing ones advance. */
+export function phrasePasses(
+  result: { wpm: number; accuracy: number },
+  settings: Pick<SourceSettings, "minimumWPM" | "minimumAccuracy">,
+): boolean {
+  return (
+    result.wpm >= settings.minimumWPM &&
+    result.accuracy >= settings.minimumAccuracy
+  );
 }
 
 /** Enter Focus: builds a dedicated session; dataset sessions stay untouched. */

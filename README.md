@@ -12,7 +12,7 @@ npm run dev
 Then open Raycast and run **Practice Ngrams**.
 
 - Read the stable target at the top, then type in the native **Your turn** area; accuracy updates live, while WPM appears after each phrase.
-- At a 100% accuracy goal (all guided lessons) the first wrong key fails the phrase immediately and restarts it (`Missed "x" at char N — restart`). Below 100%, correct mistakes in place using the inline character hint; accuracy includes corrected mistakes.
+- Correct mistakes in place with Backspace using the inline `Expected "x"` hint. Accuracy includes corrected mistakes, so once it drops below the goal the hint and Feedback row note that the phrase will repeat; pass/fail is decided when the phrase is finished.
 - Return never counts as a keystroke; completion is automatic.
 - Paste is disabled during a drill to keep WPM meaningful.
 - Use **Reset Phrase** (`⌘↵`, the Form primary action) to clear the phrase or **Change Dataset** (`⌘D`) from Actions. Once a lesson is complete, **Next Lesson** becomes the primary action (`⌘↵`) and is always available as `⌘⇧N`.

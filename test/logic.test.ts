@@ -10,16 +10,17 @@ import {
   exitFocus,
   FOCUS_GENERATION_SOURCE,
   generatePhrases,
-  instantFailIndex,
   hydratePracticeState,
   isPhraseSource,
   metrics,
   newSession,
+  phrasePasses,
   recordAttempt,
   sanitizeTypedInput,
   serializePracticeState,
   sourcesForPicker,
   startFocus,
+  willRepeatPhrase,
 } from "../src/logic";
 import { englishCoreWords, englishPhrases } from "../src/data";
 
@@ -301,25 +302,53 @@ test("sanitizeTypedInput strips Return/newlines and leading spaces", () => {
   );
 });
 
-test("instantFailIndex fails on the first wrong key only at 100% goal", () => {
+test("a wrong key stays in the input; Backspace + retype completes the phrase", () => {
   const expected = "th he";
-  const wrong = describeTextEdit("th", "thx");
-  assert.equal(instantFailIndex(expected, wrong, 100), 2);
-  assert.equal(instantFailIndex(expected, wrong, 98), null);
-  assert.equal(
-    instantFailIndex(expected, describeTextEdit("th", "th "), 100),
-    null,
-  );
-  assert.equal(instantFailIndex(expected, describeTextEdit("", "x"), 100), 0);
-  // Deletions and paste-sized inserts are not instant fails.
-  assert.equal(
-    instantFailIndex(expected, describeTextEdit("thx", "th"), 100),
-    null,
-  );
-  assert.equal(
-    instantFailIndex(expected, describeTextEdit("", "zz"), 100),
-    null,
-  );
+  let typed = "";
+  let attempt = createAttempt();
+  // "th h" → wrong "x" → Backspace → "e" (phrase completes normally).
+  for (const raw of ["t", "th", "th ", "th h", "th hx", "th h", "th he"]) {
+    const next = sanitizeTypedInput(raw);
+    attempt = recordAttempt(attempt, expected, describeTextEdit(typed, next));
+    typed = next;
+    if (raw === "th hx") {
+      // Wrong keystroke is kept (no reset) and counted.
+      assert.equal(typed, "th hx");
+      assert.equal(attempt.wrongKeystrokes, 1);
+    }
+  }
+  assert.equal(typed, expected, "phrase completes after correction");
+  assert.deepEqual(attempt, { correctKeystrokes: 5, wrongKeystrokes: 1 });
+});
+
+test("willRepeatPhrase flags below-goal accuracy early and stays flagged", () => {
+  assert.equal(willRepeatPhrase(createAttempt(), 100), false);
+  const clean = { correctKeystrokes: 4, wrongKeystrokes: 0 };
+  assert.equal(willRepeatPhrase(clean, 100), false);
+  const oneMiss = { correctKeystrokes: 4, wrongKeystrokes: 1 };
+  assert.equal(willRepeatPhrase(oneMiss, 100), true);
+  // Still flagged after the mistake is corrected (accuracy can't recover).
+  const corrected = { correctKeystrokes: 30, wrongKeystrokes: 1 };
+  assert.equal(willRepeatPhrase(corrected, 100), true);
+  // Lower goals tolerate some misses.
+  assert.equal(willRepeatPhrase(corrected, 95), false);
+  assert.equal(willRepeatPhrase(oneMiss, 95), true);
+});
+
+test("end-of-phrase gate still fails (repeats) below goal", () => {
+  const goal = { minimumWPM: 40, minimumAccuracy: 100 };
+  const expected = "th he";
+  let attempt = createAttempt();
+  let typed = "";
+  for (const next of ["t", "tx", "t", "th", "th ", "th h", "th he"]) {
+    attempt = recordAttempt(attempt, expected, describeTextEdit(typed, next));
+    typed = next;
+  }
+  const result = metrics(expected, typed, 0, 1_000, attempt);
+  assert.ok(result.accuracy < 100);
+  assert.equal(phrasePasses(result, goal), false, "corrected miss → repeat");
+  assert.equal(phrasePasses({ wpm: 30, accuracy: 100 }, goal), false);
+  assert.equal(phrasePasses({ wpm: 40, accuracy: 100 }, goal), true);
 });
 
 test("maxPhrases caps a seeded round and survives serialize/hydrate", () => {
