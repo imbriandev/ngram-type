@@ -17,6 +17,7 @@ Then open Raycast and run **Practice Ngrams**.
 - Paste is disabled during a drill to keep WPM meaningful.
 - Use **Reset Phrase** (`⌘↵`, the Form primary action) to clear the phrase or **Change Dataset** (`⌘D`) from Actions. Once a lesson is complete, **Next Lesson** becomes the primary action (`⌘↵`) and is always available as `⌘⇧N`.
 - Open **Actions** (`⌘K`) for settings, a new round, sound, or copying the phrase.
+- Set **Your WPM goal** / **Your accuracy goal** in Settings; they persist across lessons. Guided lessons use the higher of your goal and the lesson goal (pick “Lesson default” to clear yours).
 - Choose a Warm-up, Build, or Flow preset in Settings; advanced controls appear only for Custom, and drafts are retained while switching datasets.
 - Follow the **guided english-v1** curriculum (⌘L): Bigrams → Trigrams → Tetragrams → English Core, then optional English Phrases for sentence transfer. Each lesson round is 25 phrases sampled from the lesson scope; finishing a round shows a toast (with **Next Lesson** when unlocked).
 - **English Core** is a ranked ~5k bank; practice scopes stay Top 50–200.

@@ -4,7 +4,9 @@ import {
   ENGLISH_TRACK_V1,
   LESSON_ROUND_PHRASES,
   applyLesson,
+  effectiveGoals,
   ensureLessonSession,
+  migrateLegacyGoals,
   createProgress,
   firstLesson,
   formatLessonSubtitle,
@@ -22,9 +24,13 @@ import {
 } from "../src/curriculum";
 import {
   createPracticeState,
+  createUserGoals,
   hydratePracticeState,
   newSession,
   serializePracticeState,
+  PracticeState,
+  SourceSettings,
+  UserGoals,
 } from "../src/logic";
 
 test("english-v1 track chains every lesson through next links", () => {
@@ -334,4 +340,122 @@ test("ensureLessonSession migrates older uncapped lesson sessions gracefully", (
     migrated.sessions.english_phrases.phrases.length,
     LESSON_ROUND_PHRASES,
   );
+});
+
+test("user goals survive lesson change, Next, Retry, Resume, and Start", () => {
+  const goals: UserGoals = { minimumWPM: 80, minimumAccuracy: null };
+  let state: PracticeState = { ...createPracticeState(), goals };
+  const first = getLesson("bi-50-warmup");
+  assert.ok(first);
+  state = applyLesson(state, first); // Curriculum start / Retry
+  assert.deepEqual(state.goals, goals);
+  const following = nextLesson(first.id); // Next Lesson
+  assert.ok(following);
+  state = ensureLessonSession(state, following);
+  assert.deepEqual(state.goals, goals);
+  state = ensureLessonSession(state, following); // Resume current
+  assert.deepEqual(state.goals, goals);
+  state = applyLesson(state, following); // Retry
+  assert.deepEqual(state.goals, goals);
+
+  // Persisted through serialize/hydrate (state v7).
+  const restored = hydratePracticeState(serializePracticeState(state));
+  assert.ok(restored);
+  assert.deepEqual(restored.goals, goals);
+  assert.equal(
+    effectiveGoals(restored.goals, following, restored.settings.bigrams)
+      .minimumWPM,
+    80,
+  );
+});
+
+test("effective goal = max(user, lesson); unset uses lesson; free uses user/default", () => {
+  const lesson = getLesson("core-200-flow"); // 50 WPM, 100%
+  assert.ok(lesson);
+  const fallback = { minimumWPM: 40, minimumAccuracy: 100 };
+
+  const unset = effectiveGoals(createUserGoals(), lesson, fallback);
+  assert.equal(unset.minimumWPM, 50);
+  assert.equal(unset.wpmSource, "lesson");
+
+  const higher = effectiveGoals(
+    { minimumWPM: 80, minimumAccuracy: null },
+    lesson,
+    fallback,
+  );
+  assert.equal(higher.minimumWPM, 80);
+  assert.equal(higher.wpmSource, "yours");
+
+  const lower = effectiveGoals(
+    { minimumWPM: 30, minimumAccuracy: 95 },
+    lesson,
+    fallback,
+  );
+  assert.equal(lower.minimumWPM, 50, "lesson goal is a floor in guided mode");
+  assert.equal(lower.wpmSource, "lesson");
+  assert.equal(lower.minimumAccuracy, 100);
+
+  // Free mode (no lesson): user goal, else dataset default.
+  const free = effectiveGoals(
+    { minimumWPM: 30, minimumAccuracy: 95 },
+    undefined,
+    fallback,
+  );
+  assert.equal(free.minimumWPM, 30);
+  assert.equal(free.minimumAccuracy, 95);
+  assert.equal(free.accuracySource, "yours");
+  const freeDefault = effectiveGoals(createUserGoals(), undefined, fallback);
+  assert.equal(freeDefault.minimumWPM, 40);
+  assert.equal(freeDefault.wpmSource, "default");
+
+  // Lesson completion uses the effective goal.
+  assert.equal(
+    roundAverageMeetsLesson([60, 62], lesson, higher.minimumWPM),
+    false,
+  );
+  assert.equal(
+    roundAverageMeetsLesson([80, 82], lesson, higher.minimumWPM),
+    true,
+  );
+  assert.equal(roundAverageMeetsLesson([60, 62], lesson), true);
+});
+
+test("goal-only changes still match the lesson (no leaving guided)", () => {
+  const lesson = getLesson("bi-50-warmup");
+  assert.ok(lesson);
+  const goalChanged: SourceSettings = {
+    ...lessonSettings(lesson),
+    minimumWPM: 80,
+    minimumAccuracy: 95,
+  };
+  assert.ok(settingsMatchLesson(goalChanged, lesson));
+  const shapeChanged: SourceSettings = {
+    ...lessonSettings(lesson),
+    scope: 100,
+  };
+  assert.equal(settingsMatchLesson(shapeChanged, lesson), false);
+});
+
+test("legacy saved goals migrate; state without goals hydrates as unset", () => {
+  const legacy = hydratePracticeState({ source: "bigrams" });
+  assert.ok(legacy);
+  assert.deepEqual(legacy.goals, createUserGoals());
+
+  const lesson = getLesson("bi-50-warmup");
+  assert.ok(lesson);
+  const base = createPracticeState();
+  const custom = {
+    ...base,
+    settings: {
+      ...base.settings,
+      bigrams: { ...base.settings.bigrams, minimumWPM: 80 },
+    },
+  };
+  assert.deepEqual(migrateLegacyGoals(custom, lesson), {
+    minimumWPM: 80,
+    minimumAccuracy: null,
+  });
+  assert.deepEqual(migrateLegacyGoals(base, lesson), createUserGoals());
+  assert.deepEqual(migrateLegacyGoals(custom, undefined, 40).minimumWPM, 80);
+  assert.deepEqual(migrateLegacyGoals(base, undefined, 40), createUserGoals());
 });

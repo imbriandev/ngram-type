@@ -39,6 +39,7 @@ import {
   sourcesForPicker,
   sourceTitles,
   startFocus,
+  UserGoals,
   willRepeatPhrase,
 } from "./logic";
 import {
@@ -67,6 +68,7 @@ import {
   advanceToLesson,
   applyLesson,
   createProgress,
+  effectiveGoals,
   ensureLessonSession,
   firstLesson,
   formatLessonSubtitle,
@@ -75,6 +77,7 @@ import {
   hydrateProgress,
   isLessonCompleted,
   markLessonComplete,
+  migrateLegacyGoals,
   nextLesson,
   roundAverageMeetsLesson,
   settingsMatchLesson,
@@ -222,6 +225,24 @@ function matchingPrefixLength(expected: string, typed: string) {
   return index;
 }
 
+const GOAL_DEFAULT = "default";
+
+function goalValue(goal: number | null) {
+  return goal === null ? GOAL_DEFAULT : String(goal);
+}
+
+function parseGoal(value: string): number | null {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Standard options plus a saved custom value (e.g. a migrated 45). */
+function goalOptions(standard: number[], current: number | null) {
+  return current === null || standard.includes(current)
+    ? standard
+    : [...standard, current].sort((a, b) => a - b);
+}
+
 function readableCharacter(character: string | undefined) {
   if (character === " ") return "space";
   if (character === undefined) return "end of phrase";
@@ -279,8 +300,11 @@ export default function Practice() {
       let nextProgress = createProgress();
       let nextFocus = createFocusBank();
       let nextHistory = createHistory();
+      let savedHasGoals = false;
       try {
         const saved = rawState ? (JSON.parse(rawState) as unknown) : undefined;
+        savedHasGoals =
+          typeof saved === "object" && saved !== null && "goals" in saved;
         const hydrated = hydratePracticeState(saved);
         if (hydrated) nextState = hydrated;
       } catch {
@@ -328,6 +352,22 @@ export default function Practice() {
           ...nextState,
           soundEnabled: prefs.soundEnabled,
           settings,
+        };
+      }
+
+      // Saved state from before user goals (v<7): keep a custom goal.
+      if (rawState && !savedHasGoals) {
+        const lesson =
+          nextProgress.mode === "guided" && !nextState.focusActive
+            ? getLesson(nextProgress.currentLessonId)
+            : undefined;
+        nextState = {
+          ...nextState,
+          goals: migrateLegacyGoals(
+            nextState,
+            lesson,
+            readColdStartPreferences().defaultMinWPM ?? 40,
+          ),
         };
       }
 
@@ -387,10 +427,16 @@ export default function Practice() {
   const hasPhrase = Boolean(expected);
   const matchingCharacters = matchingPrefixLength(expected, typed);
   const hasMistake = matchingCharacters < typed.length;
+  // Guided: max(user, lesson) goal; free/Focus: user goal or dataset default.
+  const goal = effectiveGoals(
+    state.goals,
+    guided && !state.focusActive ? guided : undefined,
+    settings,
+  );
   // Accuracy can't recover once below the goal, so flag the repeat early.
   const willRepeat =
-    startedAt !== null && willRepeatPhrase(attempt, settings.minimumAccuracy);
-  const repeatNote = `below ${settings.minimumAccuracy}% — this phrase will repeat`;
+    startedAt !== null && willRepeatPhrase(attempt, goal.minimumAccuracy);
+  const repeatNote = `below ${goal.minimumAccuracy}% — this phrase will repeat`;
   const feedback = inputNotice
     ? inputNotice
     : hasMistake
@@ -464,7 +510,7 @@ export default function Practice() {
       completedAttempt,
     );
 
-    if (!phrasePasses(result, settings)) {
+    if (!phrasePasses(result, goal)) {
       // Failed attempt: misses were already banked per keystroke; a slow but
       // clean phrase banks nothing.
       setCurrentMetrics(result);
@@ -475,7 +521,7 @@ export default function Practice() {
       setAttempt(createAttempt());
       setInputNotice(null);
       setStatus(
-        `Retry · ${result.wpm} WPM · ${result.accuracy}% accuracy · goal ${settings.minimumWPM}/${settings.minimumAccuracy}%`,
+        `Retry · ${result.wpm} WPM · ${result.accuracy}% accuracy · goal ${goal.minimumWPM}/${goal.minimumAccuracy}%`,
       );
       completing.current = false;
       return;
@@ -557,7 +603,7 @@ export default function Practice() {
       activeLesson &&
       !state.focusActive &&
       finishedRound &&
-      roundAverageMeetsLesson(roundWpms, activeLesson),
+      roundAverageMeetsLesson(roundWpms, activeLesson, goal.minimumWPM),
     );
 
     if (finishedRound && state.focusActive) {
@@ -600,7 +646,7 @@ export default function Practice() {
             ? `Next: ${following.title}`
             : "Track complete"
           : activeLesson && !state.focusActive
-            ? `Lesson needs avg ${activeLesson.minWPM} WPM · new round ready`
+            ? `Lesson needs avg ${goal.minimumWPM} WPM · new round ready`
             : "New round ready",
         primaryAction:
           canAdvance && following
@@ -791,6 +837,7 @@ export default function Practice() {
     nextSettings: Record<Source, SourceSettings>,
     customWords: string[],
     soundEnabled: boolean,
+    goals: UserGoals,
   ) {
     setStatus("New settings ready");
     setLastResult(null);
@@ -828,6 +875,7 @@ export default function Practice() {
         source,
         soundEnabled,
         customWords,
+        goals,
         settings: nextSettings,
         sessions,
         focusActive: false,
@@ -972,6 +1020,8 @@ export default function Practice() {
                   settings={state.settings}
                   customWords={state.customWords}
                   soundEnabled={state.soundEnabled}
+                  goals={state.goals}
+                  lessonGoal={guided?.minWPM}
                   onSave={saveSettings}
                 />
               }
@@ -1030,7 +1080,7 @@ export default function Practice() {
       <Form.Description title="Feedback" text={feedback} />
       <Form.Description
         title="Goal"
-        text={`${settings.minimumWPM} WPM · ${settings.minimumAccuracy}% accuracy · round average ${averageWPM || "—"} WPM${lastResult ? ` · last ${lastResult.wpm}/${lastResult.accuracy}%` : ""}${guidedCompleted ? " · lesson complete" : ""}${canAdvanceLesson && guided?.next ? " · Next lesson ready" : ""}`}
+        text={`${goal.minimumWPM} WPM (${goal.wpmSource}) · ${goal.minimumAccuracy}% accuracy${goal.accuracySource === "yours" ? " (yours)" : ""} · round average ${averageWPM || "—"} WPM${lastResult ? ` · last ${lastResult.wpm}/${lastResult.accuracy}%` : ""}${guidedCompleted ? " · lesson complete" : ""}${canAdvanceLesson && guided?.next ? " · Next lesson ready" : ""}`}
       />
     </Form>
   );
@@ -1147,19 +1197,25 @@ function SettingsForm({
   settings,
   customWords,
   soundEnabled,
+  goals,
+  lessonGoal,
   onSave,
 }: {
   source: Source;
   settings: Record<Source, SourceSettings>;
   customWords: string[];
   soundEnabled: boolean;
+  goals: UserGoals;
+  lessonGoal?: number;
   onSave: (
     source: Source,
     settings: Record<Source, SourceSettings>,
     customWords: string[],
     soundEnabled: boolean,
+    goals: UserGoals,
   ) => void;
 }) {
+  const [goalDraft, setGoalDraft] = useState<UserGoals>(goals);
   const [selectedSource, setSelectedSource] = useState(source);
   const [drafts, setDrafts] = useState<Record<Source, SourceSettings>>(
     () =>
@@ -1231,6 +1287,7 @@ function SettingsForm({
       preparedSettings,
       custom,
       values.soundEnabled !== false,
+      goalDraft,
     );
   }
 
@@ -1345,31 +1402,62 @@ function SettingsForm({
       <Form.Separator />
       <Form.Dropdown
         id="minimumWPM"
-        title="Minimum WPM"
-        value={String(draft.minimumWPM)}
-        onChange={(value) => updateSetting("minimumWPM", value)}
+        title="Your WPM goal"
+        info="Kept across lessons. Guided lessons use the higher of your goal and the lesson goal."
+        value={goalValue(goalDraft.minimumWPM)}
+        onChange={(value) =>
+          setGoalDraft((previous) => ({
+            ...previous,
+            minimumWPM: parseGoal(value),
+          }))
+        }
       >
-        {[20, 30, 40, 50, 60, 80, 100].map((value) => (
-          <Form.Dropdown.Item
-            key={value}
-            value={String(value)}
-            title={String(value)}
-          />
-        ))}
+        <Form.Dropdown.Item
+          value={GOAL_DEFAULT}
+          title={
+            lessonGoal !== undefined
+              ? `Lesson default (${lessonGoal})`
+              : `Default (${draft.minimumWPM})`
+          }
+        />
+        {goalOptions([20, 30, 40, 50, 60, 80, 100], goalDraft.minimumWPM).map(
+          (value) => (
+            <Form.Dropdown.Item
+              key={value}
+              value={String(value)}
+              title={String(value)}
+            />
+          ),
+        )}
       </Form.Dropdown>
       <Form.Dropdown
         id="minimumAccuracy"
-        title="Minimum accuracy"
-        value={String(draft.minimumAccuracy)}
-        onChange={(value) => updateSetting("minimumAccuracy", value)}
+        title="Your accuracy goal"
+        value={goalValue(goalDraft.minimumAccuracy)}
+        onChange={(value) =>
+          setGoalDraft((previous) => ({
+            ...previous,
+            minimumAccuracy: parseGoal(value),
+          }))
+        }
       >
-        {[90, 95, 98, 100].map((value) => (
-          <Form.Dropdown.Item
-            key={value}
-            value={String(value)}
-            title={`${value}%`}
-          />
-        ))}
+        <Form.Dropdown.Item
+          value={GOAL_DEFAULT}
+          title={
+            lessonGoal !== undefined
+              ? "Lesson default"
+              : `Default (${draft.minimumAccuracy}%)`
+          }
+        />
+        {goalOptions([90, 95, 98, 100], goalDraft.minimumAccuracy).map(
+          (value) => (
+            <Form.Dropdown.Item
+              key={value}
+              value={String(value)}
+              title={`${value}%`}
+            />
+          ),
+        )}
       </Form.Dropdown>
       <Form.Checkbox
         id="soundEnabled"

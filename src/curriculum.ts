@@ -2,6 +2,7 @@ import {
   Source,
   SourceSettings,
   PracticeState,
+  UserGoals,
   newSession,
   sourceTitles,
 } from "./logic";
@@ -221,17 +222,85 @@ export function lessonForSourceSettings(
   );
 }
 
+/**
+ * Does a drill shape (scope/items/repeats) match the lesson? Goals are not
+ * compared: user goals live in `state.goals`, so changing a goal never counts
+ * as leaving the lesson.
+ */
 export function settingsMatchLesson(
-  settings: SourceSettings,
+  settings: Pick<SourceSettings, "scope" | "combination" | "repetition">,
   lesson: Lesson,
 ): boolean {
   return (
     settings.scope === lesson.scope &&
     settings.combination === lesson.combination &&
-    settings.repetition === lesson.repetition &&
-    settings.minimumWPM === lesson.minWPM &&
-    settings.minimumAccuracy === lesson.minAccuracy
+    settings.repetition === lesson.repetition
   );
+}
+
+export type GoalSource = "yours" | "lesson" | "default";
+
+export type EffectiveGoals = {
+  minimumWPM: number;
+  minimumAccuracy: number;
+  wpmSource: GoalSource;
+  accuracySource: GoalSource;
+};
+
+/**
+ * Guided: max(user goal, lesson goal), or the lesson goal when unset.
+ * Free / Focus (no lesson): user goal, or the dataset default.
+ */
+export function effectiveGoals(
+  user: UserGoals,
+  lesson: Lesson | undefined,
+  fallback: Pick<SourceSettings, "minimumWPM" | "minimumAccuracy">,
+): EffectiveGoals {
+  const pick = (
+    userValue: number | null,
+    lessonValue: number | undefined,
+    fallbackValue: number,
+  ): [number, GoalSource] => {
+    if (lessonValue !== undefined) {
+      return userValue !== null && userValue > lessonValue
+        ? [userValue, "yours"]
+        : [lessonValue, "lesson"];
+    }
+    return userValue !== null
+      ? [userValue, "yours"]
+      : [fallbackValue, "default"];
+  };
+  const [minimumWPM, wpmSource] = pick(
+    user.minimumWPM,
+    lesson?.minWPM,
+    fallback.minimumWPM,
+  );
+  const [minimumAccuracy, accuracySource] = pick(
+    user.minimumAccuracy,
+    lesson?.minAccuracy,
+    fallback.minimumAccuracy,
+  );
+  return { minimumWPM, minimumAccuracy, wpmSource, accuracySource };
+}
+
+/**
+ * One-time migration for saved state from before user goals existed: a saved
+ * goal that differs from the baseline (lesson goal in guided mode, the
+ * dataset default in free mode) is treated as the user's goal.
+ */
+export function migrateLegacyGoals(
+  state: PracticeState,
+  lesson: Lesson | undefined,
+  freeBaselineWPM = 40,
+): UserGoals {
+  const saved = state.settings[lesson?.source ?? state.source];
+  const baselineWPM = lesson ? lesson.minWPM : freeBaselineWPM;
+  const baselineAccuracy = lesson ? lesson.minAccuracy : 100;
+  return {
+    minimumWPM: saved.minimumWPM !== baselineWPM ? saved.minimumWPM : null,
+    minimumAccuracy:
+      saved.minimumAccuracy !== baselineAccuracy ? saved.minimumAccuracy : null,
+  };
 }
 
 /** Apply a lesson onto practice state: source, settings, fresh capped session. */
@@ -402,12 +471,13 @@ export function advanceToLesson(
 export function roundAverageMeetsLesson(
   wpms: number[],
   lesson: Lesson,
+  minimumWPM: number = lesson.minWPM,
 ): boolean {
   if (wpms.length === 0) return false;
   const average = Math.round(
     wpms.reduce((sum, value) => sum + value, 0) / wpms.length,
   );
-  return average >= lesson.minWPM;
+  return average >= minimumWPM;
 }
 
 export const PRESET_TITLES: Record<LessonPreset, string> = {

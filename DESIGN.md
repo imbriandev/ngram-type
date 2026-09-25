@@ -108,6 +108,7 @@ UX:
 - **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint without regenerating an in-progress round (`ensureLessonSession`).
 - Finishing a round at or above the lesson’s min WPM marks the lesson complete and shows a success toast with a **Next Lesson** action; advance is an Action (`⌘↵` once complete, `⌘⇧N` always), not forced. Otherwise a “Round complete” toast shows the lesson’s WPM goal.
 - Action Panel: **Open Curriculum**, **Resume Guided Track** (when free), **Next Lesson**, **Retry Lesson**, **Jump to Free Practice**.
+- **Goals:** Settings edits the user's WPM/accuracy goal (`state.goals`), which lessons never overwrite. Guided uses max(user goal, lesson goal), or the lesson goal when unset (“Lesson default”); free/Focus uses the user goal or the dataset default. The Goal row labels the source (`yours` / `lesson` / `default`). Changing only a goal keeps guided mode; lesson matching compares drill shape only. Pre-v7 saved goals that differ from the lesson/default migrate to the user goal.
 - Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset, starting Focus, or saving mismatched settings leaves guided mode with a “Left guided track” toast (resume with ⌘⇧G).
 
 ## Phase 2 — reflex training
@@ -116,7 +117,7 @@ Seeded sessions, Focus miss bank, and light round history.
 
 ### Seeded sessions
 
-Practice state version **6** (adds `focusSession`, `focusReturnMode`, optional session `maxPhrases`). Each session stores `{ seed, settings snapshot, phraseIndex, wpms, accuracies, values? }` — **not** the phrase array. `generatePhrases` uses mulberry32 so the same seed + settings (+ optional Focus `values`) regenerates identical phrases on hydrate. Reloading Raycast mid-round restores the same phrases and progress. The old sanitize that wiped sessions with `phrases.length > 1000` is gone; legacy phrase arrays still hydrate once, then migrate to the seed model on the next save.
+Practice state version **7** (adds `focusSession`, `focusReturnMode`, optional session `maxPhrases`, and user `goals`). Each session stores `{ seed, settings snapshot, phraseIndex, wpms, accuracies, values? }` — **not** the phrase array. `generatePhrases` uses mulberry32 so the same seed + settings (+ optional Focus `values`) regenerates identical phrases on hydrate. Reloading Raycast mid-round restores the same phrases and progress. The old sanitize that wiped sessions with `phrases.length > 1000` is gone; legacy phrase arrays still hydrate once, then migrate to the seed model on the next save.
 
 ### Focus-from-errors bank
 

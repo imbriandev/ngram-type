@@ -24,6 +24,15 @@ export type SourceSettings = {
   minimumAccuracy: number;
 };
 
+/**
+ * User-chosen goals, kept apart from lesson goals. null = not set
+ * (guided uses the lesson goal; free uses the dataset default).
+ */
+export type UserGoals = {
+  minimumWPM: number | null;
+  minimumAccuracy: number | null;
+};
+
 export type Session = {
   /** Deterministic shuffle seed; phrases are regenerated, not persisted. */
   seed: number;
@@ -52,6 +61,8 @@ export type PracticeState = {
   focusSession: Session | null;
   /** Curriculum mode to restore when Focus ends. */
   focusReturnMode: "guided" | "free" | null;
+  /** User goals; never overwritten by lessons. */
+  goals: UserGoals;
 };
 
 export type Attempt = {
@@ -65,7 +76,7 @@ export type TextEdit = {
   removed: string;
 };
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 /** Focus sessions use their own token list; this source only drives generation. */
 export const FOCUS_GENERATION_SOURCE: Source = "custom_words";
@@ -302,6 +313,7 @@ export function serializePracticeState(state: PracticeState) {
       ? serializeSession(state.focusSession)
       : null,
     focusReturnMode: state.focusReturnMode,
+    goals: state.goals,
   };
 }
 
@@ -464,6 +476,22 @@ export function createPracticeState(): PracticeState {
     focusActive: false,
     focusSession: null,
     focusReturnMode: null,
+    goals: createUserGoals(),
+  };
+}
+
+export function createUserGoals(): UserGoals {
+  return { minimumWPM: null, minimumAccuracy: null };
+}
+
+/** Sanitize saved user goals; missing or invalid values mean "not set". */
+export function sanitizeUserGoals(value: unknown): UserGoals {
+  const candidate = isRecord(value) ? value : {};
+  const wpm = boundedInteger(candidate.minimumWPM, 1, 500, 0);
+  const accuracy = boundedInteger(candidate.minimumAccuracy, 1, 100, 0);
+  return {
+    minimumWPM: wpm || null,
+    minimumAccuracy: accuracy || null,
   };
 }
 
@@ -522,6 +550,7 @@ export function hydratePracticeState(value: unknown): PracticeState | null {
       (value.focusReturnMode === "guided" || value.focusReturnMode === "free")
         ? value.focusReturnMode
         : null,
+    goals: sanitizeUserGoals(value.goals),
   };
 }
 
