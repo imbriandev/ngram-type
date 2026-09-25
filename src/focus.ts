@@ -1,4 +1,5 @@
-import { Source, TextEdit } from "./logic";
+import { getLesson } from "./curriculum";
+import { Source, TextEdit, sourceTitles } from "./logic";
 
 export const FOCUS_STORAGE_KEY = "ngram-type-focus";
 export const FOCUS_VERSION = 1;
@@ -123,6 +124,14 @@ export function recordFocusSuccess(
   return { version: FOCUS_VERSION, entries };
 }
 
+/** Remove one token from the bank (Focus Bank list → Remove). */
+export function removeFocusToken(bank: FocusBank, token: string): FocusBank {
+  return {
+    version: FOCUS_VERSION,
+    entries: bank.entries.filter((entry) => entry.token !== token),
+  };
+}
+
 export function focusTokens(bank: FocusBank): string[] {
   return bank.entries.map((entry) => entry.token);
 }
@@ -228,22 +237,19 @@ export function hydrateHistory(value: unknown): PracticeHistory {
   return { version: HISTORY_VERSION, rounds };
 }
 
+/** History title: lesson title, "Focus Bank", or the dataset name. */
 export function formatRoundTitle(summary: RoundSummary): string {
-  const when = new Date(summary.at);
-  const stamp = when.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${stamp} · ${summary.avgWpm} WPM · ${summary.accuracy}%`;
+  if (summary.source === "focus") return "Focus Bank";
+  const lesson = summary.lessonId ? getLesson(summary.lessonId) : undefined;
+  if (lesson) return lesson.title;
+  return sourceTitles[summary.source as Source] ?? summary.source;
 }
 
+/** History subtitle: scope (or guided/focus context). */
 export function formatRoundSubtitle(summary: RoundSummary): string {
-  if (summary.source === "focus") return "Focus bank";
-  const scope = summary.scope === null ? "Custom" : `Top ${summary.scope}`;
-  const lesson = summary.lessonId ? ` · ${summary.lessonId}` : "";
-  return `${summary.source} · ${scope}${lesson}`;
+  if (summary.source === "focus") return "Missed chunks";
+  if (summary.lessonId && getLesson(summary.lessonId)) return "Guided lesson";
+  return summary.scope === null ? "All words" : `Top ${summary.scope}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

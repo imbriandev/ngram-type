@@ -4,7 +4,6 @@ import {
   PracticeState,
   UserGoals,
   newSession,
-  sourceTitles,
 } from "./logic";
 
 export const CURRICULUM_TRACK_ID = "english-v1";
@@ -62,7 +61,7 @@ const flow = {
 export const ENGLISH_TRACK_V1: Lesson[] = [
   {
     id: "bi-50-warmup",
-    title: "Bi · Top 50 · Warm-up",
+    title: "Bigrams · Top 50",
     source: "bigrams",
     scope: 50,
     ...warm,
@@ -72,7 +71,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "bi-100-warmup",
-    title: "Bi · Top 100 · Warm-up",
+    title: "Bigrams · Top 100",
     source: "bigrams",
     scope: 100,
     ...warm,
@@ -82,7 +81,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "tri-50-warmup",
-    title: "Tri · Top 50 · Warm-up",
+    title: "Trigrams · Top 50",
     source: "trigrams",
     scope: 50,
     ...warm,
@@ -92,7 +91,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "tri-100-build",
-    title: "Tri · Top 100 · Build",
+    title: "Trigrams · Top 100",
     source: "trigrams",
     scope: 100,
     ...build,
@@ -102,7 +101,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "tetra-50-build",
-    title: "Tetra · Top 50 · Build",
+    title: "Tetragrams · Top 50",
     source: "tetragrams",
     scope: 50,
     ...build,
@@ -112,7 +111,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "tetra-100-build",
-    title: "Tetra · Top 100 · Build",
+    title: "Tetragrams · Top 100",
     source: "tetragrams",
     scope: 100,
     ...build,
@@ -122,7 +121,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "core-50-build",
-    title: "Core · Top 50 · Build",
+    title: "English Core · Top 50",
     source: "english_core",
     scope: 50,
     ...build,
@@ -132,7 +131,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "core-100-flow",
-    title: "Core · Top 100 · Flow",
+    title: "English Core · Top 100",
     source: "english_core",
     scope: 100,
     ...flow,
@@ -142,7 +141,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "core-200-flow",
-    title: "Core · Top 200 · Flow",
+    title: "English Core · Top 200",
     source: "english_core",
     scope: 200,
     ...flow,
@@ -152,7 +151,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "phrases-200-flow",
-    title: "Phrases · Top 200 · Flow",
+    title: "English Phrases · Top 200",
     source: "english_phrases",
     scope: 200,
     ...flow,
@@ -162,7 +161,7 @@ export const ENGLISH_TRACK_V1: Lesson[] = [
   },
   {
     id: "phrases-500-flow",
-    title: "Phrases · Top 500 · Flow",
+    title: "English Phrases · Top 500",
     source: "english_phrases",
     scope: 500,
     ...flow,
@@ -492,31 +491,50 @@ export function lessonIndex(lessonId: string): number {
   return index >= 0 ? index + 1 : 0;
 }
 
+/** Stage + drill shape, e.g. "Warm-up · 2 items × 3" or "Flow · sentences". */
 export function formatLessonSubtitle(lesson: Lesson): string {
-  return `${sourceTitles[lesson.source]} · Top ${lesson.scope} · ${PRESET_TITLES[lesson.preset]} · ${lesson.minWPM} WPM`;
+  const drill =
+    lesson.source === "english_phrases"
+      ? "sentences"
+      : `${lesson.combination} ${lesson.combination === 1 ? "item" : "items"} × ${lesson.repetition}`;
+  return `${PRESET_TITLES[lesson.preset]} · ${drill}`;
 }
 
-/** Progress line shown at the top of Practice (Form.Description). */
+export type LessonGroup = { title: string; lessons: Lesson[] };
+
+/** Curriculum sections: N-grams, English Core, and the optional Phrases stage. */
+export function lessonGroups(): LessonGroup[] {
+  const group = (title: string, sources: Source[]): LessonGroup => ({
+    title,
+    lessons: ENGLISH_TRACK_V1.filter((lesson) =>
+      sources.includes(lesson.source),
+    ),
+  });
+  return [
+    group("N-grams", ["bigrams", "trigrams", "tetragrams"]),
+    group("English Core", ["english_core"]),
+    group("Phrases (optional)", ["english_phrases"]),
+  ];
+}
+
+/** Lesson context line on the Practice form (guided or free). */
 export function formatTrackProgressDescription(
   progress: CurriculumProgress,
 ): string {
   if (progress.mode === "free") {
-    return "Free practice · Resume Guided Track from Actions";
+    return "Free practice · ⌘⇧G resumes the guided track";
   }
 
   const lesson = getLesson(progress.currentLessonId);
   if (!lesson) {
-    return "Guided · Open Curriculum from Actions";
+    return "Guided · open the curriculum with ⌘L";
   }
 
   const index = lessonIndex(lesson.id);
-  const done = progress.completedLessonIds.length;
   const total = ENGLISH_TRACK_V1.length;
-  const following = nextLesson(lesson.id);
-  const nextPart = following
-    ? ` → next: ${following.title}`
-    : " · track complete";
-  return `Guided · ${index}/${total} · ${done} done · ${lesson.title}${nextPart}`;
+  const trackDone =
+    !nextLesson(lesson.id) && isLessonCompleted(progress, lesson.id);
+  return `Lesson ${index} of ${total} · ${lesson.title} · ${PRESET_TITLES[lesson.preset]}${trackDone ? " · track complete" : ""}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

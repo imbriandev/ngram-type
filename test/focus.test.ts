@@ -7,11 +7,14 @@ import {
   createFocusBank,
   createHistory,
   focusTokens,
+  formatRoundSubtitle,
+  formatRoundTitle,
   hydrateFocusBank,
   hydrateHistory,
   recordFocusMiss,
   recordFocusSuccess,
   recordKeystrokeMiss,
+  removeFocusToken,
   tokenAtIndex,
 } from "../src/focus";
 import { describeTextEdit } from "../src/logic";
@@ -131,4 +134,43 @@ test("recordKeystrokeMiss banks only actually mistyped tokens", () => {
       .entries.length,
     0,
   );
+});
+
+test("removeFocusToken drops only the given chunk", () => {
+  let bank = createFocusBank();
+  bank = recordFocusMiss(bank, "th", 1);
+  bank = recordFocusMiss(bank, "he", 2);
+  const next = removeFocusToken(bank, "th");
+  assert.deepEqual(focusTokens(next), ["he"]);
+  assert.deepEqual(focusTokens(removeFocusToken(next, "zz")), ["he"]);
+});
+
+test("formatRoundTitle/Subtitle use full names", () => {
+  const base = { at: 1, avgWpm: 40, accuracy: 100 };
+  const lesson = {
+    ...base,
+    lessonId: "bi-50-warmup",
+    source: "bigrams" as const,
+    scope: 50,
+  };
+  assert.equal(formatRoundTitle(lesson), "Bigrams · Top 50");
+  assert.equal(formatRoundSubtitle(lesson), "Guided lesson");
+
+  const free = {
+    ...base,
+    lessonId: null,
+    source: "words" as const,
+    scope: null,
+  };
+  assert.equal(formatRoundTitle(free), "Words");
+  assert.equal(formatRoundSubtitle(free), "All words");
+
+  const focus = {
+    ...base,
+    lessonId: null,
+    source: "focus" as const,
+    scope: null,
+  };
+  assert.equal(formatRoundTitle(focus), "Focus Bank");
+  assert.equal(formatRoundSubtitle(focus), "Missed chunks");
 });

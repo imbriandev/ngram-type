@@ -109,10 +109,10 @@ export const sourceTitles: Record<Source, string> = {
   bigrams: "Bigrams",
   trigrams: "Trigrams",
   tetragrams: "Tetragrams",
-  words: "Words (legacy)",
+  words: "Words",
   english_core: "English Core",
-  english_phrases: "English Phrases (optional)",
-  custom_words: "Custom words",
+  english_phrases: "English Phrases",
+  custom_words: "Custom Words",
 };
 
 /** Full source list for state, hydrate, and session maps. */

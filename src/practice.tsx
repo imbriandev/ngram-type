@@ -1,12 +1,15 @@
 import {
   Action,
   ActionPanel,
+  Alert,
   Color,
   Form,
   Icon,
+  Keyboard,
   List,
   LocalStorage,
   Toast,
+  confirmAlert,
   environment,
   getPreferenceValues,
   showToast,
@@ -58,10 +61,9 @@ import {
   hydrateHistory,
   recordFocusSuccess,
   recordKeystrokeMiss,
+  removeFocusToken,
 } from "./focus";
 import {
-  CURRICULUM_TRACK_ID,
-  ENGLISH_TRACK_V1,
   PROGRESS_STORAGE_KEY,
   CurriculumProgress,
   Lesson,
@@ -76,6 +78,7 @@ import {
   getLesson,
   hydrateProgress,
   isLessonCompleted,
+  lessonGroups,
   markLessonComplete,
   migrateLegacyGoals,
   nextLesson,
@@ -122,6 +125,8 @@ const soundFiles = {
   error: "clack.wav",
   pass: "ding.wav",
   fail: "failed.mp3",
+  /** Softer per-phrase pass; the ding is kept for round/lesson completion. */
+  phrase: "/System/Library/Sounds/Tink.aiff",
 } as const;
 
 type Sound = keyof typeof soundFiles;
@@ -143,7 +148,9 @@ function startAudio() {
   const paths = Object.fromEntries(
     Object.entries(soundFiles).map(([name, file]) => [
       name,
-      join(environment.assetsPath, "sounds", file),
+      file.startsWith("/")
+        ? file
+        : join(environment.assetsPath, "sounds", file),
     ]),
   );
   const script = `
@@ -265,6 +272,8 @@ export default function Practice() {
   > | null>(null);
   const [status, setStatus] = useState("Start typing when ready");
   const completing = useRef(false);
+  // If saved data could not be read, don't overwrite it with a fresh state.
+  const persistEnabled = useRef(true);
   const typingRef = useRef<Form.TextArea>(null);
   const session =
     state.focusActive && state.focusSession
@@ -295,98 +304,115 @@ export default function Practice() {
       LocalStorage.getItem<string>(PROGRESS_STORAGE_KEY),
       LocalStorage.getItem<string>(FOCUS_STORAGE_KEY),
       LocalStorage.getItem<string>(HISTORY_STORAGE_KEY),
-    ]).then(([rawState, rawProgress, rawFocus, rawHistory]) => {
-      let nextState = createPracticeState();
-      let nextProgress = createProgress();
-      let nextFocus = createFocusBank();
-      let nextHistory = createHistory();
-      let savedHasGoals = false;
-      try {
-        const saved = rawState ? (JSON.parse(rawState) as unknown) : undefined;
-        savedHasGoals =
-          typeof saved === "object" && saved !== null && "goals" in saved;
-        const hydrated = hydratePracticeState(saved);
-        if (hydrated) nextState = hydrated;
-      } catch {
-        // Ignore corrupt practice state.
-      }
-      try {
-        const savedProgress = rawProgress
-          ? (JSON.parse(rawProgress) as unknown)
-          : undefined;
-        nextProgress = hydrateProgress(savedProgress);
-      } catch {
-        nextProgress = createProgress();
-      }
-      try {
-        const savedFocus = rawFocus
-          ? (JSON.parse(rawFocus) as unknown)
-          : undefined;
-        nextFocus = hydrateFocusBank(savedFocus);
-      } catch {
-        nextFocus = createFocusBank();
-      }
-      try {
-        const savedHistory = rawHistory
-          ? (JSON.parse(rawHistory) as unknown)
-          : undefined;
-        nextHistory = hydrateHistory(savedHistory);
-      } catch {
-        nextHistory = createHistory();
-      }
-
-      const isColdStart = !rawState && !rawProgress;
-      if (isColdStart) {
-        const prefs = readColdStartPreferences();
-        nextProgress = { ...createProgress(), mode: prefs.mode };
-        const settings = { ...nextState.settings };
-        if (prefs.defaultMinWPM !== null) {
-          for (const source of sources) {
-            settings[source] = {
-              ...settings[source],
-              minimumWPM: prefs.defaultMinWPM,
-            };
-          }
-        }
-        nextState = {
-          ...nextState,
-          soundEnabled: prefs.soundEnabled,
-          settings,
-        };
-      }
-
-      // Saved state from before user goals (v<7): keep a custom goal.
-      if (rawState && !savedHasGoals) {
-        const lesson =
-          nextProgress.mode === "guided" && !nextState.focusActive
-            ? getLesson(nextProgress.currentLessonId)
+    ])
+      .then(([rawState, rawProgress, rawFocus, rawHistory]) => {
+        let nextState = createPracticeState();
+        let nextProgress = createProgress();
+        let nextFocus = createFocusBank();
+        let nextHistory = createHistory();
+        let savedHasGoals = false;
+        try {
+          const saved = rawState
+            ? (JSON.parse(rawState) as unknown)
             : undefined;
-        nextState = {
-          ...nextState,
-          goals: migrateLegacyGoals(
-            nextState,
-            lesson,
-            readColdStartPreferences().defaultMinWPM ?? 40,
-          ),
-        };
-      }
+          savedHasGoals =
+            typeof saved === "object" && saved !== null && "goals" in saved;
+          const hydrated = hydratePracticeState(saved);
+          if (hydrated) nextState = hydrated;
+        } catch {
+          // Ignore corrupt practice state.
+        }
+        try {
+          const savedProgress = rawProgress
+            ? (JSON.parse(rawProgress) as unknown)
+            : undefined;
+          nextProgress = hydrateProgress(savedProgress);
+        } catch {
+          nextProgress = createProgress();
+        }
+        try {
+          const savedFocus = rawFocus
+            ? (JSON.parse(rawFocus) as unknown)
+            : undefined;
+          nextFocus = hydrateFocusBank(savedFocus);
+        } catch {
+          nextFocus = createFocusBank();
+        }
+        try {
+          const savedHistory = rawHistory
+            ? (JSON.parse(rawHistory) as unknown)
+            : undefined;
+          nextHistory = hydrateHistory(savedHistory);
+        } catch {
+          nextHistory = createHistory();
+        }
 
-      if (nextProgress.mode === "guided" && !nextState.focusActive) {
-        const lesson = getLesson(nextProgress.currentLessonId);
-        // Keeps a matching in-progress round; re-caps older uncapped sessions.
-        if (lesson) nextState = ensureLessonSession(nextState, lesson);
-      }
+        const isColdStart = !rawState && !rawProgress;
+        if (isColdStart) {
+          const prefs = readColdStartPreferences();
+          nextProgress = { ...createProgress(), mode: prefs.mode };
+          const settings = { ...nextState.settings };
+          if (prefs.defaultMinWPM !== null) {
+            for (const source of sources) {
+              settings[source] = {
+                ...settings[source],
+                minimumWPM: prefs.defaultMinWPM,
+              };
+            }
+          }
+          nextState = {
+            ...nextState,
+            soundEnabled: prefs.soundEnabled,
+            settings,
+          };
+        }
 
-      setState(nextState);
-      setProgress(nextProgress);
-      setFocusBank(nextFocus);
-      setHistory(nextHistory);
-      setLoaded(true);
-    });
+        // Saved state from before user goals (v<7): keep a custom goal.
+        if (rawState && !savedHasGoals) {
+          const lesson =
+            nextProgress.mode === "guided" && !nextState.focusActive
+              ? getLesson(nextProgress.currentLessonId)
+              : undefined;
+          nextState = {
+            ...nextState,
+            goals: migrateLegacyGoals(
+              nextState,
+              lesson,
+              readColdStartPreferences().defaultMinWPM ?? 40,
+            ),
+          };
+        }
+
+        if (nextProgress.mode === "guided" && !nextState.focusActive) {
+          const lesson = getLesson(nextProgress.currentLessonId);
+          // Keeps a matching in-progress round; re-caps older uncapped sessions.
+          if (lesson) nextState = ensureLessonSession(nextState, lesson);
+        }
+
+        setState(nextState);
+        setProgress(nextProgress);
+        setFocusBank(nextFocus);
+        setHistory(nextHistory);
+        setLoaded(true);
+      })
+      .catch((error: unknown) => {
+        persistEnabled.current = false;
+        setState(ensureLessonSession(createPracticeState(), firstLesson()));
+        setProgress(createProgress());
+        setLoaded(true);
+        void showToast({
+          style: Toast.Style.Failure,
+          title: "Couldn't load saved progress",
+          message:
+            error instanceof Error
+              ? `${error.message} · practicing without saving`
+              : "Practicing without saving",
+        });
+      });
   }, []);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && persistEnabled.current) {
       void LocalStorage.setItem(
         STORAGE_KEY,
         JSON.stringify(serializePracticeState(state)),
@@ -395,19 +421,19 @@ export default function Practice() {
   }, [loaded, state]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && persistEnabled.current) {
       void LocalStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(progress));
     }
   }, [loaded, progress]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && persistEnabled.current) {
       void LocalStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify(focusBank));
     }
   }, [loaded, focusBank]);
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && persistEnabled.current) {
       void LocalStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
     }
   }, [loaded, history]);
@@ -418,7 +444,7 @@ export default function Practice() {
     setAttempt(createAttempt());
     setInputNotice(null);
     setCurrentMetrics(metrics(expected, "", null));
-    if (!expected) setStatus("Add custom words in Settings");
+    if (!expected) setStatus("Add Custom Words in Practice Settings");
     completing.current = false;
     typingRef.current?.focus();
   }, [state.source, state.focusActive, expected]);
@@ -428,10 +454,13 @@ export default function Practice() {
   const matchingCharacters = matchingPrefixLength(expected, typed);
   const hasMistake = matchingCharacters < typed.length;
   // Guided: max(user, lesson) goal; free/Focus: user goal or dataset default.
+  // Free-practice default follows the "Default WPM Goal" preference live.
+  const freeDefaultWPM =
+    readColdStartPreferences().defaultMinWPM ?? settings.minimumWPM;
   const goal = effectiveGoals(
     state.goals,
     guided && !state.focusActive ? guided : undefined,
-    settings,
+    { ...settings, minimumWPM: freeDefaultWPM },
   );
   // Accuracy can't recover once below the goal, so flag the repeat early.
   const willRepeat =
@@ -442,7 +471,7 @@ export default function Practice() {
     : hasMistake
       ? `Fix character ${matchingCharacters + 1} · ${currentMetrics.accuracy}% accuracy`
       : startedAt
-        ? `${typed.length}/${expected.length} characters · ${currentMetrics.accuracy}% accuracy${willRepeat ? ` · ${repeatNote}` : ""}`
+        ? `${typed.length}/${expected.length} characters · ${currentMetrics.accuracy}% accuracy${typed.length >= 10 ? ` · ${currentMetrics.wpm} WPM` : ""}${willRepeat ? ` · ${repeatNote}` : ""}`
         : status;
   const typingError =
     inputNotice ??
@@ -667,7 +696,7 @@ export default function Practice() {
 
     setCurrentMetrics(result);
     setLastResult(result);
-    playSound("pass", state.soundEnabled);
+    playSound(finishedRound ? "pass" : "phrase", state.soundEnabled);
     setTyped("");
     setStartedAt(null);
     setAttempt(createAttempt());
@@ -765,7 +794,11 @@ export default function Practice() {
   function startFocusPractice() {
     const tokens = focusTokens(focusBank);
     if (tokens.length === 0) {
-      setStatus("Focus bank empty · mistype to collect tokens");
+      void showToast({
+        style: Toast.Style.Failure,
+        title: "Focus bank is empty",
+        message: "Chunks you mistype are collected here while you practice",
+      });
       return;
     }
     setLastResult(null);
@@ -782,7 +815,7 @@ export default function Practice() {
       });
     }
     setState((previous) => startFocus(previous, tokens, returnMode));
-    setStatus(`Focus · ${tokens.length} tokens from recent misses`);
+    setStatus(`Focus · ${tokens.length} missed chunks`);
   }
 
   function goToNextLesson() {
@@ -802,7 +835,7 @@ export default function Practice() {
   function jumpToFreePractice() {
     setProgress((previous) => ({ ...previous, mode: "free" }));
     setState((previous) => exitFocus(previous));
-    setStatus("Free practice · change dataset anytime in Settings");
+    setStatus("Free practice · change dataset with ⌘D");
   }
 
   function resumeGuidedTrack() {
@@ -886,17 +919,37 @@ export default function Practice() {
     navigation.pop();
   }
 
-  if (!loaded) return null;
+  function removeFromFocusBank(token: string) {
+    setFocusBank((previous) => removeFocusToken(previous, token));
+  }
+
+  function clearFocusBank() {
+    setFocusBank(createFocusBank());
+  }
+
+  function clearHistory() {
+    setHistory(createHistory());
+  }
+
+  if (!loaded) return <Form isLoading />;
+
+  const phraseCounter = hasPhrase
+    ? `phrase ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}`
+    : "no phrases yet";
+  const contextTitle = state.focusActive
+    ? "Focus"
+    : guided
+      ? "Lesson"
+      : "Practice";
+  const contextText = state.focusActive
+    ? `${state.focusSession?.values?.length ?? 0} missed chunks · ${phraseCounter}`
+    : guided
+      ? `${formatTrackProgressDescription(progress)} · ${phraseCounter}${canAdvanceLesson ? " · Next Lesson ready (⌘⇧N)" : ""}`
+      : `${sourceTitles[state.source]}${settings.scope ? ` · Top ${settings.scope}` : ""} · ${phraseCounter}`;
+  const goalText = `${goal.minimumWPM} WPM (${goal.wpmSource}) · ${goal.minimumAccuracy}%${goal.accuracySource === "yours" ? " (yours)" : ""} · avg ${averageWPM || "—"}${lastResult ? ` · last ${lastResult.wpm}/${lastResult.accuracy}%` : ""}`;
 
   return (
     <Form
-      navigationTitle={
-        state.focusActive
-          ? `Focus · ${focusBank.entries.length} tokens${hasPhrase ? ` · ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : ""}`
-          : guided
-            ? `${guided.title}${hasPhrase ? ` · ${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : ""}`
-            : `Ngram Type · ${sourceTitles[state.source]} · ${hasPhrase ? `${(session?.phraseIndex ?? 0) + 1}/${session?.phrases.length ?? 0}` : "Setup"}`
-      }
       actions={
         <ActionPanel>
           {/*
@@ -916,12 +969,12 @@ export default function Practice() {
               )}
               <Action
                 title="Reset Phrase"
-                icon={Icon.ArrowClockwise}
+                icon={Icon.RotateAntiClockwise}
                 onAction={() => resetPhrase()}
               />
               <Action
                 title="New Round"
-                icon={Icon.ArrowClockwise}
+                icon={Icon.Shuffle}
                 shortcut={{ modifiers: ["cmd", "shift"], key: "r" }}
                 onAction={restartRound}
               />
@@ -931,11 +984,10 @@ export default function Practice() {
                     ? "Mute Typing Sounds"
                     : "Enable Typing Sounds"
                 }
-                icon={Icon.Music}
+                icon={state.soundEnabled ? Icon.SpeakerOff : Icon.SpeakerOn}
                 shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
                 onAction={toggleSound}
               />
-              <Action.CopyToClipboard title="Copy Phrase" content={expected} />
             </ActionPanel.Section>
           )}
           <ActionPanel.Section title="Curriculum">
@@ -968,7 +1020,7 @@ export default function Practice() {
             {guided && (
               <Action
                 title="Retry Lesson"
-                icon={Icon.ArrowClockwise}
+                icon={Icon.Repeat}
                 shortcut={{ modifiers: ["cmd", "shift"], key: "l" }}
                 onAction={retryLesson}
               />
@@ -976,13 +1028,13 @@ export default function Practice() {
             {guided && (
               <Action
                 title="Jump to Free Practice"
-                icon={Icon.Tray}
-                shortcut={{ modifiers: ["cmd", "shift"], key: "f" }}
+                icon={Icon.Keyboard}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "j" }}
                 onAction={jumpToFreePractice}
               />
             )}
           </ActionPanel.Section>
-          <ActionPanel.Section title="Reflex">
+          <ActionPanel.Section title="Review">
             {/* Same shortcut toggles Focus: the two actions never render together. */}
             {state.focusActive ? (
               <Action
@@ -1004,16 +1056,30 @@ export default function Practice() {
               />
             )}
             <Action.Push
+              title="Open Focus Bank"
+              icon={Icon.Tag}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "b" }}
+              target={
+                <FocusBankList
+                  bank={focusBank}
+                  onPractice={startFocusPractice}
+                  onRemove={removeFromFocusBank}
+                  onClear={clearFocusBank}
+                />
+              }
+            />
+            <Action.Push
               title="Open History"
               icon={Icon.Clock}
               shortcut={{ modifiers: ["cmd", "shift"], key: "h" }}
-              target={<HistoryList history={history} />}
+              target={<HistoryList history={history} onClear={clearHistory} />}
             />
           </ActionPanel.Section>
           <ActionPanel.Section title="Configure">
             <Action.Push
               title="Practice Settings"
               icon={Icon.Gear}
+              shortcut={Keyboard.Shortcut.Common.Edit}
               target={
                 <SettingsForm
                   source={state.source}
@@ -1022,12 +1088,13 @@ export default function Practice() {
                   soundEnabled={state.soundEnabled}
                   goals={state.goals}
                   lessonGoal={guided?.minWPM}
+                  freeDefaultWPM={freeDefaultWPM}
                   onSave={saveSettings}
                 />
               }
             />
             <ActionPanel.Submenu
-              title="Change Dataset"
+              title="Change Dataset…"
               icon={Icon.List}
               shortcut={{ modifiers: ["cmd"], key: "d" }}
             >
@@ -1047,16 +1114,8 @@ export default function Practice() {
       }
     >
       <Form.Description
-        title="Track"
-        text={
-          state.focusActive
-            ? `Focus · ${focusBank.entries.length} recent misses · Amphetype-style drill`
-            : formatTrackProgressDescription(progress)
-        }
-      />
-      <Form.Description
         title="Type this"
-        text={expected || "Add custom words in Practice Settings"}
+        text={expected || "Add Custom Words in Practice Settings (⌘E)"}
       />
       <Form.Separator />
       {hasPhrase ? (
@@ -1069,7 +1128,7 @@ export default function Practice() {
           onChange={handleChange}
           autoFocus
           error={typingError}
-          info="Completion is automatic. Correct mistakes with Delete."
+          info="Completion is automatic. Fix mistakes with Backspace."
         />
       ) : (
         <Form.Description
@@ -1078,43 +1137,167 @@ export default function Practice() {
         />
       )}
       <Form.Description title="Feedback" text={feedback} />
-      <Form.Description
-        title="Goal"
-        text={`${goal.minimumWPM} WPM (${goal.wpmSource}) · ${goal.minimumAccuracy}% accuracy${goal.accuracySource === "yours" ? " (yours)" : ""} · round average ${averageWPM || "—"} WPM${lastResult ? ` · last ${lastResult.wpm}/${lastResult.accuracy}%` : ""}${guidedCompleted ? " · lesson complete" : ""}${canAdvanceLesson && guided?.next ? " · Next lesson ready" : ""}`}
-      />
+      <Form.Description title={contextTitle} text={contextText} />
+      <Form.Description title="Goal" text={goalText} />
     </Form>
   );
 }
 
-function HistoryList({ history }: { history: PracticeHistory }) {
+function HistoryList({
+  history,
+  onClear,
+}: {
+  history: PracticeHistory;
+  onClear: () => void;
+}) {
+  // Local copy so the pushed view updates immediately after clearing.
+  const [rounds, setRounds] = useState(history.rounds);
+
+  async function clear() {
+    const confirmed = await confirmAlert({
+      title: "Clear History?",
+      message: "All saved rounds will be removed. This can't be undone.",
+      primaryAction: {
+        title: "Clear History",
+        style: Alert.ActionStyle.Destructive,
+      },
+    });
+    if (!confirmed) return;
+    onClear();
+    setRounds([]);
+    await showToast({ style: Toast.Style.Success, title: "History cleared" });
+  }
+
   return (
     <List navigationTitle="Practice History">
-      {history.rounds.length === 0 ? (
+      {rounds.length === 0 ? (
         <List.EmptyView
+          icon={Icon.Clock}
           title="No rounds yet"
           description="Finish a round to see average WPM and accuracy here."
         />
       ) : (
-        history.rounds.map((round, index) => (
+        rounds.map((round, index) => (
           <List.Item
             key={`${round.at}-${index}`}
             title={formatRoundTitle(round)}
             subtitle={formatRoundSubtitle(round)}
             icon={round.source === "focus" ? Icon.BullsEye : Icon.BarChart}
             accessories={[
-              {
-                tag: {
-                  value: `${round.avgWpm} WPM`,
-                  color: Color.Blue,
-                },
-              },
+              { tag: { value: `${round.avgWpm} WPM`, color: Color.Blue } },
               {
                 tag: {
                   value: `${round.accuracy}%`,
                   color: round.accuracy >= 100 ? Color.Green : Color.Orange,
                 },
               },
+              { date: new Date(round.at) },
             ]}
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Clear History"
+                  icon={Icon.Trash}
+                  style={Action.Style.Destructive}
+                  shortcut={Keyboard.Shortcut.Common.RemoveAll}
+                  onAction={clear}
+                />
+              </ActionPanel>
+            }
+          />
+        ))
+      )}
+    </List>
+  );
+}
+
+function FocusBankList({
+  bank,
+  onPractice,
+  onRemove,
+  onClear,
+}: {
+  bank: FocusBank;
+  onPractice: () => void;
+  onRemove: (token: string) => void;
+  onClear: () => void;
+}) {
+  const { pop } = useNavigation();
+  // Local copy so removals show immediately in the pushed view.
+  const [entries, setEntries] = useState(bank.entries);
+
+  async function clear() {
+    const confirmed = await confirmAlert({
+      title: "Clear Focus Bank?",
+      message: "All collected chunks will be removed.",
+      primaryAction: {
+        title: "Clear Focus Bank",
+        style: Alert.ActionStyle.Destructive,
+      },
+    });
+    if (!confirmed) return;
+    onClear();
+    setEntries([]);
+    await showToast({
+      style: Toast.Style.Success,
+      title: "Focus bank cleared",
+    });
+  }
+
+  return (
+    <List navigationTitle="Focus Bank">
+      {entries.length === 0 ? (
+        <List.EmptyView
+          icon={Icon.BullsEye}
+          title="Focus bank is empty"
+          description="Chunks you mistype are collected here while you practice."
+        />
+      ) : (
+        entries.map((entry) => (
+          <List.Item
+            key={entry.token}
+            title={entry.token}
+            icon={Icon.BullsEye}
+            accessories={[
+              {
+                tag: {
+                  value: `${entry.misses} ${entry.misses === 1 ? "miss" : "misses"}`,
+                  color: entry.misses >= 3 ? Color.Red : Color.Orange,
+                },
+              },
+              { date: new Date(entry.lastMissedAt), tooltip: "Last missed" },
+            ]}
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Practice Focus Bank"
+                  icon={Icon.Play}
+                  onAction={() => {
+                    onPractice();
+                    pop();
+                  }}
+                />
+                <Action
+                  title="Remove Chunk"
+                  icon={Icon.Trash}
+                  style={Action.Style.Destructive}
+                  shortcut={Keyboard.Shortcut.Common.Remove}
+                  onAction={() => {
+                    onRemove(entry.token);
+                    setEntries((previous) =>
+                      previous.filter((item) => item.token !== entry.token),
+                    );
+                  }}
+                />
+                <Action
+                  title="Clear Focus Bank"
+                  icon={Icon.Trash}
+                  style={Action.Style.Destructive}
+                  shortcut={Keyboard.Shortcut.Common.RemoveAll}
+                  onAction={clear}
+                />
+              </ActionPanel>
+            }
           />
         ))
       )}
@@ -1134,58 +1317,79 @@ function CurriculumList({
   const { pop } = useNavigation();
 
   return (
-    <List navigationTitle={`Curriculum · ${CURRICULUM_TRACK_ID}`}>
-      {ENGLISH_TRACK_V1.map((lesson, index) => {
-        const completed = isLessonCompleted(progress, lesson.id);
-        const isCurrent = lesson.id === progress.currentLessonId;
-        const accessories: List.Item.Accessory[] = [];
-        if (completed) {
-          accessories.push({
-            icon: Icon.CheckCircle,
-            tooltip: "Done",
-          });
-        }
-        if (isCurrent) {
-          accessories.push({
-            tag: { value: "Current", color: Color.Blue },
-          });
-        } else if (!completed) {
-          accessories.push({
-            tag: { value: "Pending", color: Color.SecondaryText },
-          });
-        }
-
+    <List
+      navigationTitle="English Curriculum"
+      selectedItemId={progress.currentLessonId}
+    >
+      {lessonGroups().map((group) => {
+        const done = group.lessons.filter((lesson) =>
+          isLessonCompleted(progress, lesson.id),
+        ).length;
         return (
-          <List.Item
-            key={lesson.id}
-            title={`${index + 1}. ${lesson.title}`}
-            subtitle={formatLessonSubtitle(lesson)}
-            icon={
-              isCurrent ? Icon.Play : completed ? Icon.CheckCircle : Icon.Circle
-            }
-            accessories={accessories}
-            actions={
-              <ActionPanel>
-                <Action
-                  title="Start Lesson"
-                  icon={Icon.Play}
-                  onAction={() => {
-                    onStartLesson(lesson);
-                    pop();
-                  }}
+          <List.Section
+            key={group.title}
+            title={group.title}
+            subtitle={`${done}/${group.lessons.length} done`}
+          >
+            {group.lessons.map((lesson) => {
+              const completed = isLessonCompleted(progress, lesson.id);
+              const isCurrent = lesson.id === progress.currentLessonId;
+              const best = progress.bestWpmByLesson[lesson.id];
+              const accessories: List.Item.Accessory[] = [];
+              if (isCurrent) {
+                accessories.push({
+                  tag: { value: "Current", color: Color.Blue },
+                });
+              }
+              if (best !== undefined) {
+                accessories.push({
+                  icon: Icon.Trophy,
+                  text: `Best ${best}`,
+                  tooltip: "Best round average WPM",
+                });
+              }
+              accessories.push({
+                text: `${lesson.minWPM} WPM`,
+                tooltip: "Lesson goal",
+              });
+              return (
+                <List.Item
+                  key={lesson.id}
+                  id={lesson.id}
+                  title={lesson.title}
+                  subtitle={formatLessonSubtitle(lesson)}
+                  icon={
+                    completed
+                      ? { source: Icon.CheckCircle, tintColor: Color.Green }
+                      : isCurrent
+                        ? Icon.Play
+                        : Icon.Circle
+                  }
+                  accessories={accessories}
+                  actions={
+                    <ActionPanel>
+                      <Action
+                        title="Start Lesson"
+                        icon={Icon.Play}
+                        onAction={() => {
+                          onStartLesson(lesson);
+                          pop();
+                        }}
+                      />
+                      <Action
+                        title="Resume Current"
+                        icon={Icon.ArrowRight}
+                        onAction={() => {
+                          onResumeCurrent();
+                          pop();
+                        }}
+                      />
+                    </ActionPanel>
+                  }
                 />
-                <Action
-                  title="Resume Current"
-                  icon={Icon.ArrowRight}
-                  shortcut={{ modifiers: ["cmd"], key: "return" }}
-                  onAction={() => {
-                    onResumeCurrent();
-                    pop();
-                  }}
-                />
-              </ActionPanel>
-            }
-          />
+              );
+            })}
+          </List.Section>
         );
       })}
     </List>
@@ -1199,6 +1403,7 @@ function SettingsForm({
   soundEnabled,
   goals,
   lessonGoal,
+  freeDefaultWPM,
   onSave,
 }: {
   source: Source;
@@ -1207,6 +1412,7 @@ function SettingsForm({
   soundEnabled: boolean;
   goals: UserGoals;
   lessonGoal?: number;
+  freeDefaultWPM: number;
   onSave: (
     source: Source,
     settings: Record<Source, SourceSettings>,
@@ -1293,11 +1499,11 @@ function SettingsForm({
 
   return (
     <Form
-      navigationTitle={`${sourceTitles[selectedSource]} settings`}
+      navigationTitle="Practice Settings"
       actions={
         <ActionPanel>
           <Action.SubmitForm
-            title="Start Practice"
+            title="Save and Practice"
             icon={Icon.CheckCircle}
             onSubmit={submit}
           />
@@ -1306,7 +1512,7 @@ function SettingsForm({
     >
       <Form.Description
         title="Session"
-        text="Changes are kept for every dataset until you start practice."
+        text="Drafts are kept for every dataset until you save."
       />
       <Form.Dropdown
         id="source"
@@ -1350,7 +1556,7 @@ function SettingsForm({
         </Form.Dropdown>
       )}
       {selectedSource === "custom_words" ? (
-        <Form.Description title="Scope" text="All custom words" />
+        <Form.Description title="Scope" text="All Custom Words" />
       ) : (
         <Form.Dropdown
           id="scope"
@@ -1417,7 +1623,7 @@ function SettingsForm({
           title={
             lessonGoal !== undefined
               ? `Lesson default (${lessonGoal})`
-              : `Default (${draft.minimumWPM})`
+              : `Default (${freeDefaultWPM})`
           }
         />
         {goalOptions([20, 30, 40, 50, 60, 80, 100], goalDraft.minimumWPM).map(

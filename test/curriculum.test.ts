@@ -15,6 +15,7 @@ import {
   hydrateProgress,
   isGuidedSource,
   lessonForSourceSettings,
+  lessonGroups,
   lessonIndex,
   lessonSettings,
   markLessonComplete,
@@ -203,23 +204,23 @@ test("markLessonComplete and round gate track progress", () => {
 
 test("formatTrackProgressDescription covers guided and free modes", () => {
   const guided = createProgress("bi-50-warmup");
-  assert.match(
+  assert.equal(
     formatTrackProgressDescription(guided),
-    /^Guided · 1\/11 · 0 done · Bi · Top 50 · Warm-up → next: Bi · Top 100 · Warm-up$/,
+    "Lesson 1 of 11 · Bigrams · Top 50 · Warm-up",
   );
 
   guided.completedLessonIds = ["bi-50-warmup"];
   guided.currentLessonId = "bi-100-warmup";
-  assert.match(
+  assert.equal(
     formatTrackProgressDescription(guided),
-    /^Guided · 2\/11 · 1 done · Bi · Top 100 · Warm-up → next: Tri · Top 50 · Warm-up$/,
+    "Lesson 2 of 11 · Bigrams · Top 100 · Warm-up",
   );
 
   const free = createProgress("tri-50-warmup");
   free.mode = "free";
   assert.equal(
     formatTrackProgressDescription(free),
-    "Free practice · Resume Guided Track from Actions",
+    "Free practice · ⌘⇧G resumes the guided track",
   );
 
   const last = createProgress("phrases-500-flow");
@@ -235,10 +236,30 @@ test("lessonIndex and formatLessonSubtitle describe track entries", () => {
 
   const lesson = getLesson("tetra-100-build");
   assert.ok(lesson);
-  assert.equal(
-    formatLessonSubtitle(lesson),
-    "Tetragrams · Top 100 · Build · 40 WPM",
+  assert.equal(lesson.title, "Tetragrams · Top 100");
+  assert.equal(formatLessonSubtitle(lesson), "Build · 5 items × 2");
+
+  const phrases = getLesson("phrases-500-flow");
+  assert.ok(phrases);
+  assert.equal(formatLessonSubtitle(phrases), "Flow · sentences");
+});
+
+test("lessonGroups covers every lesson exactly once in track order", () => {
+  const groups = lessonGroups();
+  assert.deepEqual(
+    groups.map((group) => group.title),
+    ["N-grams", "English Core", "Phrases (optional)"],
   );
+  assert.deepEqual(
+    groups.flatMap((group) => group.lessons.map((lesson) => lesson.id)),
+    ENGLISH_TRACK_V1.map((lesson) => lesson.id),
+  );
+});
+
+test("lesson titles use full names, no abbreviations", () => {
+  for (const lesson of ENGLISH_TRACK_V1) {
+    assert.doesNotMatch(lesson.title, /^(Bi|Tri|Tetra|Core)\b/);
+  }
 });
 
 test("guided lesson rounds are capped to LESSON_ROUND_PHRASES for every lesson", () => {

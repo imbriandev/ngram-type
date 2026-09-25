@@ -2,9 +2,12 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "ngram-type",
   "title": "Ngram Type",
-  "description": "Guided n-gram typing practice for Raycast: bigrams through English Core, optional phrase transfer, Focus error bank, and WPM/accuracy drills.",
+  "description": "Build touch-typing reflexes with guided n-gram drills: bigrams to the most common English words, accuracy-first, with a Focus bank for your mistakes.",
   "icon": "extension-icon.png",
   "author": "imbrian",
+  "platforms": [
+    "macOS"
+  ],
   "categories": [
     "Productivity"
   ],
@@ -13,7 +16,7 @@
     {
       "name": "practice",
       "title": "Practice Ngrams",
-      "description": "Train typing speed and accuracy with guided n-grams, English Core, and optional phrases",
+      "description": "Practice guided n-gram typing drills, from bigrams to common English words and optional sentences",
       "mode": "view"
     }
   ],
@@ -27,7 +30,7 @@
     "publish": "ray publish"
   },
   "dependencies": {
-    "@raycast/api": "^2.1.3"
+    "@raycast/api": "^2.5.1"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^2.2.0",
@@ -39,6 +42,8 @@
   },
   "keywords": [
     "typing",
+    "touch typing",
+    "typing trainer",
     "ngram",
     "n-gram",
     "wpm",
@@ -54,16 +59,16 @@
       "name": "defaultMode",
       "type": "dropdown",
       "required": false,
-      "title": "Default mode",
-      "description": "Cold-start practice mode when no saved progress exists.",
+      "title": "Default Mode",
+      "description": "Where you start on first launch, before any progress is saved. Later you can switch anytime from the Action Panel.",
       "default": "guided",
       "data": [
         {
-          "title": "Guided curriculum",
+          "title": "Guided Curriculum",
           "value": "guided"
         },
         {
-          "title": "Free practice",
+          "title": "Free Practice",
           "value": "free"
         }
       ]
@@ -72,19 +77,48 @@
       "name": "soundEnabled",
       "type": "checkbox",
       "required": false,
-      "title": "Sound effects",
-      "label": "Enable sounds by default",
-      "description": "Play keystroke and feedback sounds on cold start (Settings still toggles per session).",
+      "title": "Sound Effects",
+      "label": "Enable typing sounds on first launch",
+      "description": "Initial sound setting on first launch. Toggle anytime with ⌘⇧M.",
       "default": true
     },
     {
       "name": "defaultMinWPM",
-      "type": "textfield",
+      "type": "dropdown",
       "required": false,
-      "title": "Default minimum WPM",
-      "description": "Free-practice minimum WPM applied on cold start (guided lessons keep their own thresholds).",
-      "placeholder": "40",
-      "default": "40"
+      "title": "Default WPM Goal",
+      "description": "WPM goal for free practice when you haven't set your own goal in Practice Settings. Guided lessons use their own goals. Applies immediately.",
+      "default": "40",
+      "data": [
+        {
+          "title": "20",
+          "value": "20"
+        },
+        {
+          "title": "30",
+          "value": "30"
+        },
+        {
+          "title": "40",
+          "value": "40"
+        },
+        {
+          "title": "50",
+          "value": "50"
+        },
+        {
+          "title": "60",
+          "value": "60"
+        },
+        {
+          "title": "80",
+          "value": "80"
+        },
+        {
+          "title": "100",
+          "value": "100"
+        }
+      ]
     }
   ]
 }

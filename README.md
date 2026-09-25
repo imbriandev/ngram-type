@@ -11,7 +11,7 @@ accuracy, and speed follows.
 ## Getting started
 
 1. Open **Practice Ngrams** in Raycast.
-2. You land on the first lesson of the guided curriculum (**Bi · Top 50 · Warm-up**).
+2. You land on the first lesson of the guided curriculum (**Bigrams · Top 50**, Warm-up).
    Read the phrase under **Type this** and start typing in **Your turn**.
 3. Phrases complete automatically when typed correctly. Finish a round to
    complete the lesson, then move on with **Next Lesson** (`⌘↵` or `⌘⇧N`).
@@ -42,7 +42,9 @@ Open the Action Panel (`⌘K`) at any time to see every action.
 
 ## Guided curriculum
 
-Open it with **Open Curriculum** (`⌘L`). The `english-v1` track has 11 lessons:
+Open it with **Open Curriculum** (`⌘L`). Lessons are grouped into N-grams,
+English Core, and Phrases (optional), each with an "x/y done" count. Every row
+shows the lesson goal and your best WPM. The track has 11 lessons:
 
 | #     | Lesson                                           | Goal   |
 | ----- | ------------------------------------------------ | ------ |
@@ -67,7 +69,7 @@ you on the track.
 
 Use **Change Dataset** (`⌘D`) or **Practice Settings** to practice any dataset
 freely: Bigrams, Trigrams, Tetragrams, English Core (Top 50–200), or your own
-**Custom words**. Pick a preset (Warm-up, Build, Flow) or Custom items/repeats.
+**Custom Words**. Pick a preset (Warm-up, Build, Flow) or Custom items/repeats.
 
 ## Focus bank
 
@@ -76,10 +78,15 @@ entries, most-missed first). **Practice Focus Bank** (`⌘⇧E`) drills just tho
 chunks for one round, then returns you to where you were. Press `⌘⇧E` again to
 **Exit Focus** early. Clean phrases gradually remove chunks from the bank.
 
+**Open Focus Bank** (`⌘⇧B`) lists every chunk with its miss count. From there
+you can practice the bank, remove a single chunk (`⌃D`), or clear the whole bank
+(`⌃⇧D`, asks for confirmation).
+
 ## History
 
-**Open History** (`⌘⇧H`) lists your last 100 finished rounds with average WPM
-and accuracy.
+**Open History** (`⌘⇧H`) lists your last 100 finished rounds with the lesson,
+average WPM, accuracy, and date. **Clear History** (`⌃⇧D`) removes them after a
+confirmation.
 
 ## Keyboard shortcuts
 
@@ -93,28 +100,32 @@ and accuracy.
 | `⌘L`     | Open Curriculum                                                         |
 | `⌘⇧G`    | Resume Guided Track (in free practice)                                  |
 | `⌘⇧L`    | Retry Lesson (fresh round)                                              |
-| `⌘⇧F`    | Jump to Free Practice                                                   |
+| `⌘⇧J`    | Jump to Free Practice                                                   |
 | `⌘⇧E`    | Practice Focus Bank / Exit Focus                                        |
+| `⌘⇧B`    | Open Focus Bank                                                         |
 | `⌘⇧H`    | Open History                                                            |
+| `⌘E`     | Practice Settings                                                       |
 | `⌘D`     | Change Dataset                                                          |
-| `⌘K`     | All actions (Practice Settings, Copy Phrase, …)                         |
+| `⌘K`     | All actions                                                             |
 
 In the Curriculum list: `↵` Start Lesson, `⌘↵` Resume Current.
 
 ## Preferences
 
-Found under Raycast Settings → Extensions → Ngram Type. They apply on first
-launch (before any progress is saved):
+Found under Raycast Settings → Extensions → Ngram Type:
 
-- **Default mode**: Guided curriculum (default) or Free practice.
-- **Sound effects**: typing, mistake, pass, and fail sounds (toggle anytime with `⌘⇧M`).
-- **Default minimum WPM**: dataset default for free practice (guided lessons use
-  their own goals).
+- **Default Mode**: Guided Curriculum (default) or Free Practice. Used on first
+  launch, before any progress is saved.
+- **Sound Effects**: typing, mistake, pass, and fail sounds. Used on first
+  launch; toggle anytime with `⌘⇧M`.
+- **Default WPM Goal** (20–100): the free-practice goal when you haven't set
+  your own in Practice Settings. Guided lessons use their own goals. Applies
+  immediately.
 
 ## Credits
 
 Based on [ranelpadon/ngram-type](https://github.com/ranelpadon/ngram-type) by
-Ranel Padon, the web typing trainer inspired by Amphetype and MonkeyType. The
+Ranel Padon. The
 original bigram, trigram, tetragram, and word datasets come from that project.
 English Core is built from [wordfreq](https://github.com/rspeer/wordfreq) 3.1.1
 (Apache-2.0); English Phrases is an original editorial bank. See

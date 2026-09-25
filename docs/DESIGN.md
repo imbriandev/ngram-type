@@ -103,11 +103,12 @@ All lessons require **100% accuracy** (enforced by the existing phrase-complete 
 UX:
 
 - Each guided lesson round is capped at `LESSON_ROUND_PHRASES` (25) phrases, the first 25 of the seeded shuffle over the lesson scope (Phrases lessons too). Older uncapped sessions are re-capped from the same seed on load (progress kept when it fits, otherwise a fresh round).
-- Navigation title shows the lesson title plus phrase index (e.g. `Bi · Top 50 · Warm-up · 3/25`).
-- Practice Form shows a **Track** progress line (`Guided · 1/11 · N done · … → next: …`, or free-mode resume hint).
-- **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint without regenerating an in-progress round (`ensureLessonSession`).
+- The root Practice Form sets no navigation title (Store guideline). Row order: **Type this** → **Your turn** → **Feedback** (live WPM after 10 characters) → a context row (`Lesson` / `Practice` / `Focus` with phrase x/n) → a short **Goal** row that keeps the `(yours)` / `(lesson)` / `(default)` source.
+- While state loads the form renders `<Form isLoading />`; if loading fails, a Failure toast appears and the session runs on fresh state without writing over saved data.
+- **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons grouped into List.Sections (N-grams / English Core / Phrases (optional), each with an "x/y done" subtitle). The current lesson is preselected; rows show full titles (`Bigrams · Top 50`), preset + drill subtitle, goal WPM and Best WPM; icons are a green check (done), play (current), or circle (upcoming). Any lesson can be started; **Resume Current** returns to the checkpoint without regenerating an in-progress round (`ensureLessonSession`).
 - Finishing a round at or above the lesson’s min WPM marks the lesson complete and shows a success toast with a **Next Lesson** action; advance is an Action (`⌘↵` once complete, `⌘⇧N` always), not forced. Otherwise a “Round complete” toast shows the lesson’s WPM goal.
-- Action Panel: **Open Curriculum**, **Resume Guided Track** (when free), **Next Lesson**, **Retry Lesson**, **Jump to Free Practice**.
+- Action Panel sections: Practice (Next Lesson ⌘⇧N, Reset Phrase ⌘↵, New Round ⌘⇧R, Mute ⌘⇧M), Curriculum (Open Curriculum ⌘L, Resume Guided Track ⌘⇧G, Retry Lesson ⌘⇧L, Jump to Free Practice ⌘⇧J), Review (Practice Focus Bank / Exit Focus ⌘⇧E, Open Focus Bank ⌘⇧B, Open History ⌘⇧H), Configure (Practice Settings ⌘E, Change Dataset… ⌘D). No Raycast-reserved shortcuts (⌘⇧F Add to Favorites etc.) are used.
+- Sounds: a soft tick per passed phrase, the ding only at round/lesson end.
 - **Goals:** Settings edits the user's WPM/accuracy goal (`state.goals`), which lessons never overwrite. Guided uses max(user goal, lesson goal), or the lesson goal when unset (“Lesson default”); free/Focus uses the user goal or the dataset default. The Goal row labels the source (`yours` / `lesson` / `default`). Changing only a goal keeps guided mode; lesson matching compares drill shape only. Pre-v7 saved goals that differ from the lesson/default migrate to the user goal.
 - Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset, starting Focus, or saving mismatched settings leaves guided mode with a “Left guided track” toast (resume with ⌘⇧G).
 
@@ -121,7 +122,7 @@ Practice state version **7** (adds `focusSession`, `focusReturnMode`, optional s
 
 ### Focus-from-errors bank
 
-LocalStorage key `ngram-type-focus`. Only actually mistyped keystrokes record their whitespace-delimited token into a capped bank (40); slow-but-clean failures bank nothing. **Practice Focus Bank** (⌘⇧E) in the Reflex action section starts a Warm-up-style drill in a dedicated `focusSession` (never a dataset's session slot). Focus ends after one round (toast) or via **Exit Focus** (⌘⇧E again) and returns to the previous mode/lesson. Clean 100% phrase completions decay those tokens; zero misses removes them.
+LocalStorage key `ngram-type-focus`. Only actually mistyped keystrokes record their whitespace-delimited token into a capped bank (40); slow-but-clean failures bank nothing. **Practice Focus Bank** (⌘⇧E) in the Review action section starts a Warm-up-style drill in a dedicated `focusSession` (never a dataset's session slot). Focus ends after one round (toast) or via **Exit Focus** (⌘⇧E again) and returns to the previous mode/lesson. Clean 100% phrase completions decay those tokens; zero misses removes them.
 
 ### Light history
 
