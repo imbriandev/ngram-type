@@ -16,12 +16,13 @@ import {
   useNavigation,
 } from "@raycast/api";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
 import {
   Sound,
   crossedRepeatThreshold,
   keystrokeSound,
   phrasePassSound,
+  resolveSoundPaths,
+  soundHelperScript,
 } from "./sounds";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -136,17 +137,6 @@ function readColdStartPreferences(): {
   }
 }
 
-const soundFiles = {
-  key: "click.wav",
-  error: "clack.wav",
-  pass: "ding.wav",
-  fail: "failed.mp3",
-  /** Softer per-phrase pass; the ding is kept for round/lesson completion. */
-  phrase: "/System/Library/Sounds/Tink.aiff",
-  /** Soft cue when a phrase first drops below the accuracy goal. */
-  repeat: "/System/Library/Sounds/Basso.aiff",
-} satisfies Record<Sound, string>;
-
 type AudioProcess = ReturnType<typeof spawn>;
 type PracticeStyle = "warm_up" | "build" | "flow" | "custom";
 
@@ -164,37 +154,8 @@ let audioUnavailable = false;
 
 function startAudio() {
   if (audioProcess || audioUnavailable) return;
-  const paths = Object.fromEntries(
-    Object.entries(soundFiles).map(([name, file]) => [
-      name,
-      file.startsWith("/")
-        ? file
-        : join(environment.assetsPath, "sounds", file),
-    ]),
-  );
-  const script = `
-    ObjC.import("Foundation");
-    ObjC.import("AudioToolbox");
-    const paths = ${JSON.stringify(paths)};
-    const sounds = {};
-    Object.keys(paths).forEach((name) => {
-      const id = Ref();
-      $.AudioServicesCreateSystemSoundID($.NSURL.fileURLWithPath(paths[name]), id);
-      sounds[name] = id[0];
-    });
-    const input = $.NSFileHandle.fileHandleWithStandardInput;
-    let buffer = "";
-    while (true) {
-      const data = input.availableData;
-      if (Number(data.length) === 0) break;
-      buffer += ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding));
-      const lines = buffer.split(/\\r?\\n/);
-      buffer = lines.pop();
-      lines.forEach((name) => {
-        if (sounds[name]) $.AudioServicesPlaySystemSound(sounds[name]);
-      });
-    }
-  `;
+  const paths = resolveSoundPaths(environment.assetsPath);
+  const script = soundHelperScript(paths);
   const process = spawn(
     "/usr/bin/osascript",
     ["-l", "JavaScript", "-e", script],

@@ -4,7 +4,12 @@ import {
   crossedRepeatThreshold,
   keystrokeSound,
   phrasePassSound,
+  resolveSoundPaths,
+  soundFiles,
+  soundHelperScript,
 } from "../src/sounds";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   createAttempt,
   describeTextEdit,
@@ -70,4 +75,45 @@ test("ding only for a passed lesson or a finished Focus round", () => {
     phrasePassSound({ ...base, finishedRound: false, lessonPassed: true }),
     "phrase",
   );
+});
+
+test("sound names map to the intended files", () => {
+  assert.deepEqual(soundFiles, {
+    key: "click.wav",
+    error: "clack.wav",
+    pass: "ding.wav",
+    fail: "failed.mp3",
+    phrase: "/System/Library/Sounds/Tink.aiff",
+    repeat: "/System/Library/Sounds/Basso.aiff",
+  });
+});
+
+test("bundled sounds exist in assets/sounds; system sounds resolve verbatim", () => {
+  const root = join(__dirname, "..", "..");
+  const paths = resolveSoundPaths(join(root, "assets"));
+  for (const [name, file] of Object.entries(soundFiles)) {
+    const path = paths[name as keyof typeof paths];
+    if (file.startsWith("/")) {
+      assert.equal(path, file);
+      if (process.platform === "darwin") assert.ok(existsSync(path), path);
+    } else {
+      assert.ok(existsSync(path), `${name} → ${path}`);
+    }
+  }
+  // No bundled file shadows a system sound (e.g. a custom tink).
+  for (const file of ["tink.wav", "Tink.aiff", "tink.aiff", "basso.wav"]) {
+    assert.ok(!existsSync(join(root, "assets", "sounds", file)), file);
+  }
+});
+
+test("helper registers and plays sounds by name (no index mapping)", () => {
+  const paths = resolveSoundPaths("/assets");
+  const script = soundHelperScript(paths);
+  assert.ok(script.includes(`const paths = ${JSON.stringify(paths)};`));
+  assert.match(script, /sounds\[name\] = id\[0\]/);
+  assert.match(script, /AudioServicesPlaySystemSound\(sounds\[name\]\)/);
+  assert.ok(script.includes("buffer.split(/\\r?\\n/)"));
+  // Every name the TS side can send has a registered path.
+  const sent = ["key", "error", "repeat", "phrase", "pass", "fail"];
+  assert.deepEqual(Object.keys(paths).sort(), [...sent].sort());
 });

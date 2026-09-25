@@ -43,3 +43,59 @@ export function phrasePassSound(input: {
   }
   return "phrase";
 }
+
+/**
+ * Sound name → file. Relative names live in the extension's `assets/sounds`;
+ * absolute paths are macOS system sounds. The helper looks sounds up by
+ * name, so order here doesn't matter.
+ */
+export const soundFiles = {
+  key: "click.wav",
+  error: "clack.wav",
+  pass: "ding.wav",
+  fail: "failed.mp3",
+  /** Per-phrase pass; the ding is kept for lesson/Focus completion. */
+  phrase: "/System/Library/Sounds/Tink.aiff",
+  /** Soft cue when a phrase first drops below the accuracy goal. */
+  repeat: "/System/Library/Sounds/Basso.aiff",
+} satisfies Record<Sound, string>;
+
+/** Absolute path for every sound, given the extension's assets folder. */
+export function resolveSoundPaths(assetsPath: string): Record<Sound, string> {
+  return Object.fromEntries(
+    Object.entries(soundFiles).map(([name, file]) => [
+      name,
+      file.startsWith("/") ? file : `${assetsPath}/sounds/${file}`,
+    ]),
+  ) as Record<Sound, string>;
+}
+
+/**
+ * JXA source for the long-lived `osascript` helper: registers one
+ * SystemSoundID per name, then plays `sounds[name]` for each stdin line.
+ */
+export function soundHelperScript(paths: Record<Sound, string>): string {
+  return `
+    ObjC.import("Foundation");
+    ObjC.import("AudioToolbox");
+    const paths = ${JSON.stringify(paths)};
+    const sounds = {};
+    Object.keys(paths).forEach((name) => {
+      const id = Ref();
+      $.AudioServicesCreateSystemSoundID($.NSURL.fileURLWithPath(paths[name]), id);
+      sounds[name] = id[0];
+    });
+    const input = $.NSFileHandle.fileHandleWithStandardInput;
+    let buffer = "";
+    while (true) {
+      const data = input.availableData;
+      if (Number(data.length) === 0) break;
+      buffer += ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding));
+      const lines = buffer.split(/\\r?\\n/);
+      buffer = lines.pop();
+      lines.forEach((name) => {
+        if (sounds[name]) $.AudioServicesPlaySystemSound(sounds[name]);
+      });
+    }
+  `;
+}
