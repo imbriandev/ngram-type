@@ -6,8 +6,10 @@ import {
   Icon,
   List,
   LocalStorage,
+  Toast,
   environment,
   getPreferenceValues,
+  showToast,
   useNavigation,
 } from "@raycast/api";
 import { spawn } from "node:child_process";
@@ -20,18 +22,23 @@ import {
   createAttempt,
   createPracticeState,
   describeTextEdit,
+  exitFocus,
+  FOCUS_GENERATION_SOURCE,
   hydratePracticeState,
+  instantFailIndex,
   isPhraseSource,
   metrics,
   newSession,
   PracticeState,
   recordAttempt,
+  sanitizeTypedInput,
   serializePracticeState,
   Source,
   SourceSettings,
   sources,
   sourcesForPicker,
   sourceTitles,
+  startFocus,
 } from "./logic";
 import {
   FOCUS_STORAGE_KEY,
@@ -47,9 +54,8 @@ import {
   formatRoundTitle,
   hydrateFocusBank,
   hydrateHistory,
-  recordFocusMiss,
   recordFocusSuccess,
-  tokenAtIndex,
+  recordKeystrokeMiss,
 } from "./focus";
 import {
   CURRICULUM_TRACK_ID,
@@ -60,6 +66,7 @@ import {
   advanceToLesson,
   applyLesson,
   createProgress,
+  ensureLessonSession,
   firstLesson,
   formatLessonSubtitle,
   formatTrackProgressDescription,
@@ -71,6 +78,9 @@ import {
   roundAverageMeetsLesson,
   settingsMatchLesson,
 } from "./curriculum";
+
+const SHORTCUT_RESUME_GUIDED = "⌘⇧G";
+const SHORTCUT_EXIT_FOCUS = "⌘⇧E";
 
 const STORAGE_KEY = "ngram-type-state";
 
@@ -234,7 +244,10 @@ export default function Practice() {
   const [status, setStatus] = useState("Start typing when ready");
   const completing = useRef(false);
   const typingRef = useRef<Form.TextArea>(null);
-  const session = state.sessions[state.source];
+  const session =
+    state.focusActive && state.focusSession
+      ? state.focusSession
+      : state.sessions[state.source];
   const expected = session?.phrases[session.phraseIndex] ?? "";
   const settings = state.settings[state.source];
   const navigation = useNavigation();
@@ -319,15 +332,8 @@ export default function Practice() {
 
       if (nextProgress.mode === "guided" && !nextState.focusActive) {
         const lesson = getLesson(nextProgress.currentLessonId);
-        if (lesson) {
-          const currentSettings = nextState.settings[lesson.source];
-          if (
-            nextState.source !== lesson.source ||
-            !settingsMatchLesson(currentSettings, lesson)
-          ) {
-            nextState = applyLesson(nextState, lesson);
-          }
-        }
+        // Keeps a matching in-progress round; re-caps older uncapped sessions.
+        if (lesson) nextState = ensureLessonSession(nextState, lesson);
       }
 
       setState(nextState);
@@ -374,7 +380,7 @@ export default function Practice() {
     if (!expected) setStatus("Add custom words in Settings");
     completing.current = false;
     typingRef.current?.focus();
-  }, [state.source, expected]);
+  }, [state.source, state.focusActive, expected]);
 
   const averageWPM = average(session?.wpms ?? []);
   const hasPhrase = Boolean(expected);
@@ -407,16 +413,21 @@ export default function Practice() {
   function restartRound() {
     setLastResult(null);
     setState((previous) => {
-      const current = previous.sessions[previous.source];
-      const values =
-        previous.focusActive && current.values && current.values.length > 0
-          ? current.values
-          : previous.focusActive
-            ? focusTokens(focusBank)
-            : undefined;
-      if (previous.focusActive && (!values || values.length === 0)) {
-        return { ...previous, focusActive: false };
+      if (previous.focusActive && previous.focusSession) {
+        const focus = previous.focusSession;
+        return {
+          ...previous,
+          focusSession: newSession(
+            FOCUS_GENERATION_SOURCE,
+            focus.settings,
+            [],
+            {
+              values: focus.values,
+            },
+          ),
+        };
       }
+      const current = previous.sessions[previous.source];
       return {
         ...previous,
         sessions: {
@@ -425,7 +436,7 @@ export default function Practice() {
             previous.source,
             previous.settings[previous.source],
             previous.customWords,
-            values ? { values } : {},
+            { maxPhrases: current.maxPhrases },
           ),
         },
       };
@@ -452,16 +463,8 @@ export default function Practice() {
       result.wpm < settings.minimumWPM ||
       result.accuracy < settings.minimumAccuracy
     ) {
-      // Failed attempt: bank every token in the phrase for Focus practice.
-      const failedTokens = expected.split(/\s+/).filter(Boolean);
-      if (failedTokens.length > 0) {
-        setFocusBank((previous) =>
-          failedTokens.reduce(
-            (bank, token) => recordFocusMiss(bank, token),
-            previous,
-          ),
-        );
-      }
+      // Failed attempt: misses were already banked per keystroke; a slow but
+      // clean phrase banks nothing.
       setCurrentMetrics(result);
       setLastResult(result);
       playSound("fail", state.soundEnabled);
@@ -476,7 +479,7 @@ export default function Practice() {
       return;
     }
 
-    const currentSession = state.sessions[state.source];
+    const currentSession = session;
     const finishedRound =
       currentSession.phraseIndex + 1 >= currentSession.phrases.length;
     const roundWpms = [...currentSession.wpms, result.wpm];
@@ -497,23 +500,44 @@ export default function Practice() {
     const roundAccuracies = [...currentSession.accuracies, result.accuracy];
     const roundAccuracyAvg = average(roundAccuracies);
 
-    setState((previous) => {
-      const current = previous.sessions[previous.source];
-      return {
-        ...previous,
-        sessions: {
-          ...previous.sessions,
-          [previous.source]: completeSessionPhrase(
-            current,
-            previous.source,
-            previous.settings[previous.source],
-            previous.customWords,
-            result.wpm,
-            result.accuracy,
-          ),
-        },
-      };
-    });
+    if (state.focusActive) {
+      if (!finishedRound) {
+        setState((previous) =>
+          previous.focusSession
+            ? {
+                ...previous,
+                focusSession: completeSessionPhrase(
+                  previous.focusSession,
+                  FOCUS_GENERATION_SOURCE,
+                  previous.focusSession.settings,
+                  [],
+                  result.wpm,
+                  result.accuracy,
+                ),
+              }
+            : previous,
+        );
+      }
+      // A finished Focus round ends Focus (handled below via leaveFocus).
+    } else {
+      setState((previous) => {
+        const current = previous.sessions[previous.source];
+        return {
+          ...previous,
+          sessions: {
+            ...previous.sessions,
+            [previous.source]: completeSessionPhrase(
+              current,
+              previous.source,
+              previous.settings[previous.source],
+              previous.customWords,
+              result.wpm,
+              result.accuracy,
+            ),
+          },
+        };
+      });
+    }
 
     if (finishedRound) {
       const summary: RoundSummary = {
@@ -527,21 +551,66 @@ export default function Practice() {
       setHistory((previous) => appendRound(previous, summary));
     }
 
-    if (
+    const lessonPassed = Boolean(
       activeLesson &&
       !state.focusActive &&
       finishedRound &&
-      roundAverageMeetsLesson(roundWpms, activeLesson)
-    ) {
-      setProgress((previous) =>
-        markLessonComplete(previous, activeLesson.id, roundAvg),
+      roundAverageMeetsLesson(roundWpms, activeLesson),
+    );
+
+    if (finishedRound && state.focusActive) {
+      const backTo = leaveFocus();
+      setStatus(`Focus round complete · avg ${roundAvg} WPM`);
+      void showToast({
+        style: Toast.Style.Success,
+        title: `Focus round complete · ${roundAvg} WPM`,
+        message: `Back to ${backTo}`,
+      });
+    } else if (finishedRound) {
+      const following =
+        activeLesson && !state.focusActive
+          ? nextLesson(activeLesson.id)
+          : undefined;
+      const canAdvance = Boolean(
+        following &&
+        activeLesson &&
+        (lessonPassed || isLessonCompleted(progress, activeLesson.id)),
       );
-      const following = nextLesson(activeLesson.id);
-      setStatus(
-        following
-          ? `Lesson complete · avg ${roundAvg} WPM · Next: ${following.title}`
-          : `Track complete · avg ${roundAvg} WPM · great work`,
-      );
+      if (lessonPassed && activeLesson) {
+        setProgress((previous) =>
+          markLessonComplete(previous, activeLesson.id, roundAvg),
+        );
+        setStatus(
+          following
+            ? `Lesson complete · avg ${roundAvg} WPM · Next: ${following.title}`
+            : `Track complete · avg ${roundAvg} WPM · great work`,
+        );
+      } else {
+        setStatus(`Round complete · avg ${roundAvg} WPM · new round ready`);
+      }
+      void showToast({
+        style: Toast.Style.Success,
+        title: lessonPassed
+          ? `Lesson complete · ${roundAvg} WPM`
+          : `Round complete · ${roundAvg} WPM`,
+        message: lessonPassed
+          ? following
+            ? `Next: ${following.title}`
+            : "Track complete"
+          : activeLesson && !state.focusActive
+            ? `Lesson needs avg ${activeLesson.minWPM} WPM · new round ready`
+            : "New round ready",
+        primaryAction:
+          canAdvance && following
+            ? {
+                title: "Next Lesson",
+                onAction: (toast) => {
+                  void toast.hide();
+                  startLesson(following, `Next lesson · ${following.title}`);
+                },
+              }
+            : undefined,
+      });
     } else {
       setStatus(
         `Passed · ${result.wpm} WPM · ${result.accuracy}% · next phrase ready`,
@@ -558,9 +627,28 @@ export default function Practice() {
     completing.current = false;
   }
 
+  /**
+   * Set the controlled input. When state already equals `value` but the field
+   * shows something else (e.g. a stripped newline), render `shown` once so
+   * Raycast receives a real value change and the field resyncs.
+   */
+  function setInput(value: string, shown: string) {
+    if (value === typed && shown !== value) {
+      setTyped(shown);
+      setTimeout(() => setTyped(value), 0);
+    } else {
+      setTyped(value);
+    }
+  }
+
   function handleChange(value: string) {
     if (!expected) return;
-    const next = value.trimStart();
+    // Return/newlines never count as keystrokes (primary action is ⌘↵).
+    const next = sanitizeTypedInput(value);
+    if (next === typed) {
+      if (value !== next) setInput(next, value);
+      return;
+    }
     if (!next) {
       resetPhrase();
       return;
@@ -570,6 +658,29 @@ export default function Practice() {
     if (edit.inserted.length > 1) {
       setInputNotice("Paste is disabled during a typing drill");
       playSound("error", state.soundEnabled);
+      return;
+    }
+
+    // Only real mistyped characters go to the Focus bank.
+    setFocusBank((previous) => recordKeystrokeMiss(previous, expected, edit));
+
+    const missIndex = instantFailIndex(
+      expected,
+      edit,
+      settings.minimumAccuracy,
+    );
+    if (missIndex !== null) {
+      // 100% goal: the first wrong key fails the phrase; restart immediately.
+      playSound("fail", state.soundEnabled);
+      setInput("", next);
+      setStartedAt(null);
+      setAttempt(createAttempt());
+      setLastResult(null);
+      setCurrentMetrics(metrics(expected, "", null));
+      const notice = `Missed ${readableCharacter(expected[missIndex])} at char ${missIndex + 1} — restart`;
+      setInputNotice(notice);
+      setStatus(notice);
+      completing.current = false;
       return;
     }
 
@@ -584,12 +695,6 @@ export default function Practice() {
     if (next.length > typed.length && !completesPhrase) {
       playSound(isWrong ? "error" : "key", state.soundEnabled);
     }
-    if (isWrong && edit.inserted.length === 1) {
-      const token = tokenAtIndex(expected, edit.index);
-      if (token) {
-        setFocusBank((previous) => recordFocusMiss(previous, token));
-      }
-    }
     setTyped(next);
     setAttempt(nextAttempt);
     setInputNotice(null);
@@ -603,10 +708,35 @@ export default function Practice() {
     setLastResult(null);
     setStatus(message);
     setProgress((previous) => advanceToLesson(previous, lesson.id));
-    setState((previous) => ({
-      ...applyLesson(previous, lesson),
-      focusActive: false,
-    }));
+    // Keep an in-progress round for this lesson (Resume / Start current).
+    setState((previous) => ensureLessonSession(previous, lesson));
+  }
+
+  function toastLeftGuided() {
+    void showToast({
+      style: Toast.Style.Success,
+      title: "Left guided track",
+      message: `Resume Guided Track with ${SHORTCUT_RESUME_GUIDED}`,
+    });
+  }
+
+  /** End Focus and return to the mode/lesson active before it. Returns a label. */
+  function leaveFocus(): string {
+    const returnMode = state.focusReturnMode;
+    setLastResult(null);
+    if (returnMode === "guided") {
+      const lesson = getLesson(progress.currentLessonId) ?? firstLesson();
+      setProgress((previous) => advanceToLesson(previous, lesson.id));
+      setState((previous) => ensureLessonSession(exitFocus(previous), lesson));
+      return lesson.title;
+    }
+    setState((previous) => exitFocus(previous));
+    return `free practice · ${sourceTitles[state.source]}`;
+  }
+
+  function exitFocusPractice() {
+    const backTo = leaveFocus();
+    setStatus(`Focus ended · back to ${backTo}`);
   }
 
   function startFocusPractice() {
@@ -616,31 +746,19 @@ export default function Practice() {
       return;
     }
     setLastResult(null);
-    setProgress((previous) =>
-      previous.mode === "guided" ? { ...previous, mode: "free" } : previous,
-    );
-    setState((previous) => {
-      const base = previous.settings[previous.source];
-      const focusSettings = {
-        ...base,
-        scope: tokens.length,
-        combination: Math.min(2, tokens.length),
-        repetition: 3,
-      };
-      return {
-        ...previous,
-        focusActive: true,
-        sessions: {
-          ...previous.sessions,
-          [previous.source]: newSession(
-            previous.source,
-            focusSettings,
-            previous.customWords,
-            { values: tokens },
-          ),
-        },
-      };
-    });
+    const returnMode =
+      state.focusActive && state.focusReturnMode
+        ? state.focusReturnMode
+        : progress.mode;
+    if (progress.mode === "guided") {
+      setProgress((previous) => ({ ...previous, mode: "free" }));
+      void showToast({
+        style: Toast.Style.Success,
+        title: "Left guided track",
+        message: `Focus returns after one round · ${SHORTCUT_EXIT_FOCUS} exits now`,
+      });
+    }
+    setState((previous) => startFocus(previous, tokens, returnMode));
     setStatus(`Focus · ${tokens.length} tokens from recent misses`);
   }
 
@@ -660,7 +778,7 @@ export default function Practice() {
 
   function jumpToFreePractice() {
     setProgress((previous) => ({ ...previous, mode: "free" }));
-    setState((previous) => ({ ...previous, focusActive: false }));
+    setState((previous) => exitFocus(previous));
     setStatus("Free practice · change dataset anytime in Settings");
   }
 
@@ -673,13 +791,13 @@ export default function Practice() {
     if (value in sourceTitles) {
       setLastResult(null);
       setStatus("Start typing when ready");
-      setProgress((previous) =>
-        previous.mode === "guided" ? { ...previous, mode: "free" } : previous,
-      );
+      if (progress.mode === "guided") {
+        setProgress((previous) => ({ ...previous, mode: "free" }));
+        toastLeftGuided();
+      }
       setState((previous) => ({
-        ...previous,
+        ...exitFocus(previous),
         source: value as Source,
-        focusActive: false,
       }));
     }
   }
@@ -699,18 +817,19 @@ export default function Practice() {
   ) {
     setStatus("New settings ready");
     setLastResult(null);
-    setProgress((previous) => {
-      if (previous.mode !== "guided") return previous;
-      const lesson = getLesson(previous.currentLessonId);
-      if (
-        lesson &&
-        source === lesson.source &&
-        settingsMatchLesson(nextSettings[lesson.source], lesson)
-      ) {
-        return previous;
-      }
-      return { ...previous, mode: "free" };
-    });
+    const currentLesson =
+      progress.mode === "guided"
+        ? getLesson(progress.currentLessonId)
+        : undefined;
+    const staysGuided = Boolean(
+      currentLesson &&
+      source === currentLesson.source &&
+      settingsMatchLesson(nextSettings[currentLesson.source], currentLesson),
+    );
+    if (progress.mode === "guided" && !staysGuided) {
+      setProgress((previous) => ({ ...previous, mode: "free" }));
+      toastLeftGuided();
+    }
     setState((previous) => {
       const sessions = { ...previous.sessions };
       const customChanged =
@@ -735,6 +854,8 @@ export default function Practice() {
         settings: nextSettings,
         sessions,
         focusActive: false,
+        focusSession: null,
+        focusReturnMode: null,
       };
     });
     navigation.pop();
@@ -753,13 +874,24 @@ export default function Practice() {
       }
       actions={
         <ActionPanel>
-          {/* Primary action = Return/Enter. Reset Phrase must stay first. */}
+          {/*
+            Form primary action = ⌘↵ (first action), secondary = ⌘⇧↵.
+            Next Lesson becomes primary once the lesson is complete; otherwise
+            Reset Phrase is primary. Next Lesson also keeps ⌘⇧N in any position.
+          */}
           {hasPhrase && (
             <ActionPanel.Section title="Practice">
+              {guided && canAdvanceLesson && guided.next && (
+                <Action
+                  title="Next Lesson"
+                  icon={Icon.ArrowRight}
+                  shortcut={{ modifiers: ["cmd", "shift"], key: "n" }}
+                  onAction={goToNextLesson}
+                />
+              )}
               <Action
                 title="Reset Phrase"
                 icon={Icon.ArrowClockwise}
-                shortcut={{ modifiers: [], key: "return" }}
                 onAction={() => resetPhrase()}
               />
               <Action
@@ -808,14 +940,6 @@ export default function Practice() {
                 onAction={resumeGuidedTrack}
               />
             )}
-            {guided && canAdvanceLesson && guided.next && (
-              <Action
-                title="Next Lesson"
-                icon={Icon.ArrowRight}
-                shortcut={{ modifiers: ["cmd"], key: "return" }}
-                onAction={goToNextLesson}
-              />
-            )}
             {guided && (
               <Action
                 title="Retry Lesson"
@@ -834,16 +958,26 @@ export default function Practice() {
             )}
           </ActionPanel.Section>
           <ActionPanel.Section title="Reflex">
-            <Action
-              title={
-                focusBank.entries.length > 0
-                  ? `Practice Focus Bank (${focusBank.entries.length})`
-                  : "Practice Focus Bank"
-              }
-              icon={Icon.BullsEye}
-              shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
-              onAction={startFocusPractice}
-            />
+            {/* Same shortcut toggles Focus: the two actions never render together. */}
+            {state.focusActive ? (
+              <Action
+                title="Exit Focus"
+                icon={Icon.XMarkCircle}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                onAction={exitFocusPractice}
+              />
+            ) : (
+              <Action
+                title={
+                  focusBank.entries.length > 0
+                    ? `Practice Focus Bank (${focusBank.entries.length})`
+                    : "Practice Focus Bank"
+                }
+                icon={Icon.BullsEye}
+                shortcut={{ modifiers: ["cmd", "shift"], key: "e" }}
+                onAction={startFocusPractice}
+              />
+            )}
             <Action.Push
               title="Open History"
               icon={Icon.Clock}

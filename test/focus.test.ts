@@ -11,8 +11,10 @@ import {
   hydrateHistory,
   recordFocusMiss,
   recordFocusSuccess,
+  recordKeystrokeMiss,
   tokenAtIndex,
 } from "../src/focus";
+import { describeTextEdit } from "../src/logic";
 
 test("tokenAtIndex finds the whitespace-delimited token", () => {
   assert.equal(tokenAtIndex("th he an", 0), "th");
@@ -83,4 +85,50 @@ test("appendRound keeps newest history capped", () => {
   const restored = hydrateHistory(history);
   assert.equal(restored.rounds.length, HISTORY_CAP);
   assert.equal(restored.rounds[0].avgWpm, 40 + HISTORY_CAP + 4);
+});
+
+test("recordKeystrokeMiss banks only actually mistyped tokens", () => {
+  const expected = "th he an";
+  let bank = createFocusBank();
+  let typed = "";
+  // Type "th h", mistype "x" (for "e"), fix it, finish the phrase.
+  for (const next of [
+    "t",
+    "th",
+    "th ",
+    "th h",
+    "th hx",
+    "th h",
+    "th he",
+    "th he ",
+    "th he a",
+    "th he an",
+  ]) {
+    bank = recordKeystrokeMiss(
+      bank,
+      expected,
+      describeTextEdit(typed, next),
+      1,
+    );
+    typed = next;
+  }
+  assert.deepEqual(focusTokens(bank), ["he"]);
+  assert.equal(bank.entries[0].misses, 1);
+
+  // A clean (even if slow) phrase banks nothing.
+  let clean = createFocusBank();
+  typed = "";
+  for (let i = 1; i <= expected.length; i++) {
+    const next = expected.slice(0, i);
+    clean = recordKeystrokeMiss(clean, expected, describeTextEdit(typed, next));
+    typed = next;
+  }
+  assert.equal(clean.entries.length, 0);
+
+  // Paste-sized inserts and deletions never bank.
+  assert.equal(
+    recordKeystrokeMiss(createFocusBank(), expected, describeTextEdit("", "zz"))
+      .entries.length,
+    0,
+  );
 });

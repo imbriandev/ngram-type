@@ -1,4 +1,4 @@
-import { Source } from "./logic";
+import { Source, TextEdit } from "./logic";
 
 export const FOCUS_STORAGE_KEY = "ngram-type-focus";
 export const FOCUS_VERSION = 1;
@@ -84,6 +84,23 @@ export function recordFocusMiss(
     (a, b) => b.misses - a.misses || b.lastMissedAt - a.lastMissedAt,
   );
   return { version: FOCUS_VERSION, entries: entries.slice(0, FOCUS_BANK_CAP) };
+}
+
+/**
+ * Bank only tokens that were actually mistyped: a single inserted character
+ * that does not match the expected text at that position. Correct keystrokes,
+ * deletions, and slow-but-correct phrases never touch the bank.
+ */
+export function recordKeystrokeMiss(
+  bank: FocusBank,
+  expected: string,
+  edit: TextEdit,
+  now = Date.now(),
+): FocusBank {
+  if (edit.inserted.length !== 1) return bank;
+  if (expected[edit.index] === edit.inserted) return bank;
+  const token = tokenAtIndex(expected, edit.index);
+  return token ? recordFocusMiss(bank, token, now) : bank;
 }
 
 /** Decay tokens after a clean drill; remove when misses hit zero. */

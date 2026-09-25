@@ -12,12 +12,13 @@ npm run dev
 Then open Raycast and run **Practice Ngrams**.
 
 - Read the stable target at the top, then type in the native **Your turn** area; accuracy updates live, while WPM appears after each phrase.
-- Correct mistakes in place using the inline character hint. Accuracy includes corrected mistakes, so the threshold represents the full attempt.
+- At a 100% accuracy goal (all guided lessons) the first wrong key fails the phrase immediately and restarts it (`Missed "x" at char N — restart`). Below 100%, correct mistakes in place using the inline character hint; accuracy includes corrected mistakes.
+- Return never counts as a keystroke; completion is automatic.
 - Paste is disabled during a drill to keep WPM meaningful.
-- Use **Reset Phrase** (`Enter`) to clear the phrase or **Change Dataset** (`⌘D`) from Actions.
+- Use **Reset Phrase** (`⌘↵`, the Form primary action) to clear the phrase or **Change Dataset** (`⌘D`) from Actions. Once a lesson is complete, **Next Lesson** becomes the primary action (`⌘↵`) and is always available as `⌘⇧N`.
 - Open **Actions** (`⌘K`) for settings, a new round, sound, or copying the phrase.
 - Choose a Warm-up, Build, or Flow preset in Settings; advanced controls appear only for Custom, and drafts are retained while switching datasets.
-- Follow the **guided english-v1** curriculum (⌘L): Bigrams → Trigrams → Tetragrams → English Core, then optional English Phrases for sentence transfer.
+- Follow the **guided english-v1** curriculum (⌘L): Bigrams → Trigrams → Tetragrams → English Core, then optional English Phrases for sentence transfer. Each lesson round is 25 phrases sampled from the lesson scope; finishing a round shows a toast (with **Next Lesson** when unlocked).
 - **English Core** is a ranked ~5k bank; practice scopes stay Top 50–200.
 - **English Phrases** (optional, after Core 200) are 2,000 interleaved editorial sentences for capitalization, punctuation, and apostrophes.
 - Extension Preferences set cold-start mode (guided/free), default sound, and free-practice minimum WPM.
@@ -28,7 +29,7 @@ Then open Raycast and run **Practice Ngrams**.
 
 1. Run `npm run dev`, then open **Practice Ngrams**.
 2. Check Extension **Preferences** (mode / sound / free min WPM — cold start only).
-3. **Curriculum** `⌘L` · **Focus** `⌘⇧E` · **History** `⌘⇧H` · **Enter** resets the phrase.
+3. **Curriculum** `⌘L` · **Focus** `⌘⇧E` (toggles Exit Focus) · **History** `⌘⇧H` · **Resume Guided** `⌘⇧G` · **Next Lesson** `⌘⇧N` · `⌘↵` resets the phrase.
 4. Phrases stay out of the dataset picker until a Phrases curriculum lesson is started.
 
 ## Publish

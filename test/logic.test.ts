@@ -7,14 +7,19 @@ import {
   createPracticeState,
   defaultSources,
   describeTextEdit,
+  exitFocus,
+  FOCUS_GENERATION_SOURCE,
   generatePhrases,
+  instantFailIndex,
   hydratePracticeState,
   isPhraseSource,
   metrics,
   newSession,
   recordAttempt,
+  sanitizeTypedInput,
   serializePracticeState,
   sourcesForPicker,
+  startFocus,
 } from "../src/logic";
 import { englishCoreWords, englishPhrases } from "../src/data";
 
@@ -62,7 +67,13 @@ test("starts a clean round after the final phrase", () => {
   });
   // Force a 2-phrase session for the advance check.
   const first = completeSessionPhrase(
-    { ...seeded, phrases: ["th", "he"], phraseIndex: 0, wpms: [], accuracies: [] },
+    {
+      ...seeded,
+      phrases: ["th", "he"],
+      phraseIndex: 0,
+      wpms: [],
+      accuracies: [],
+    },
     "bigrams",
     settings,
     [],
@@ -73,7 +84,14 @@ test("starts a clean round after the final phrase", () => {
   assert.deepEqual(first.wpms, [50]);
   assert.deepEqual(first.accuracies, [100]);
 
-  const nextRound = completeSessionPhrase(first, "bigrams", settings, [], 60, 98);
+  const nextRound = completeSessionPhrase(
+    first,
+    "bigrams",
+    settings,
+    [],
+    60,
+    98,
+  );
   assert.equal(nextRound.phraseIndex, 0);
   assert.deepEqual(nextRound.wpms, []);
   assert.deepEqual(nextRound.accuracies, []);
@@ -188,15 +206,27 @@ test("legacy phrase sessions above 1000 items still hydrate", () => {
   assert.ok(typeof restored.sessions.bigrams.seed === "number");
 });
 
-test("focus values override regenerates from the same seed", () => {
-  const settings = {
-    ...createPracticeState().settings.bigrams,
-    scope: 4,
-    combination: 2,
-    repetition: 3,
-  };
+test("focus session restores from its own slot with the same seed", () => {
   const values = ["aa", "bb", "cc", "dd"];
-  const session = newSession("bigrams", settings, [], { seed: 7, values });
+  const base = createPracticeState();
+  const focused = startFocus(base, values, "guided", 7);
+  const restored = hydratePracticeState(serializePracticeState(focused));
+  assert.ok(restored);
+  assert.equal(restored.focusActive, true);
+  assert.equal(restored.focusReturnMode, "guided");
+  assert.ok(restored.focusSession);
+  assert.deepEqual(
+    restored.focusSession.phrases,
+    focused.focusSession?.phrases,
+  );
+  assert.deepEqual(restored.focusSession.values, values);
+  // Dataset sessions are untouched by Focus.
+  assert.equal(restored.sessions.bigrams.values, undefined);
+});
+
+test("legacy Focus values leaked into a dataset slot are stripped on hydrate", () => {
+  const settings = createPracticeState().settings.bigrams;
+  const clean = newSession("bigrams", settings, [], { seed: 7 });
   const restored = hydratePracticeState({
     source: "bigrams",
     focusActive: true,
@@ -207,14 +237,138 @@ test("focus values override regenerates from the same seed", () => {
         phraseIndex: 0,
         wpms: [],
         accuracies: [],
-        values,
+        values: ["aa", "bb"],
       },
     },
   });
   assert.ok(restored);
-  assert.equal(restored.focusActive, true);
-  assert.deepEqual(restored.sessions.bigrams.phrases, session.phrases);
-  assert.deepEqual(restored.sessions.bigrams.values, values);
+  assert.equal(restored.focusActive, false, "no focusSession → not in Focus");
+  assert.equal(restored.focusSession, null);
+  assert.equal(restored.sessions.bigrams.values, undefined);
+  assert.deepEqual(restored.sessions.bigrams.phrases, clean.phrases);
+});
+
+test("startFocus/exitFocus never touch dataset sessions", () => {
+  const base = createPracticeState();
+  const before = base.sessions.bigrams;
+  const midRound = {
+    ...base,
+    sessions: {
+      ...base.sessions,
+      bigrams: { ...before, phraseIndex: 4, wpms: [1, 2, 3, 4] },
+    },
+  };
+  const focused = startFocus(midRound, ["th", "he"], "free");
+  assert.equal(focused.focusActive, true);
+  assert.equal(focused.sessions, midRound.sessions);
+  assert.ok(focused.focusSession);
+  assert.ok(
+    focused.focusSession.phrases.every((phrase) =>
+      phrase.split(" ").every((token) => token === "th" || token === "he"),
+    ),
+  );
+  // Focus round completion keeps values; the round then ends in the UI.
+  const advanced = completeSessionPhrase(
+    focused.focusSession,
+    FOCUS_GENERATION_SOURCE,
+    focused.focusSession.settings,
+    [],
+    40,
+    100,
+  );
+  assert.deepEqual(advanced.values, ["th", "he"]);
+
+  const exited = exitFocus(focused);
+  assert.equal(exited.focusActive, false);
+  assert.equal(exited.focusSession, null);
+  assert.equal(exited.focusReturnMode, null);
+  assert.equal(exited.sessions.bigrams.phraseIndex, 4);
+  assert.deepEqual(exited.sessions.bigrams.wpms, [1, 2, 3, 4]);
+  assert.equal(startFocus(base, [], "free"), base, "empty bank is a no-op");
+});
+
+test("sanitizeTypedInput strips Return/newlines and leading spaces", () => {
+  assert.equal(sanitizeTypedInput("th he\n"), "th he");
+  assert.equal(sanitizeTypedInput("th\r\n he"), "th he");
+  assert.equal(sanitizeTypedInput("\n"), "");
+  assert.equal(sanitizeTypedInput("  th"), "th");
+  // A stripped newline produces no edit → no keystroke, no miss.
+  const edit = describeTextEdit("th", sanitizeTypedInput("th\n"));
+  assert.equal(edit.inserted, "");
+  assert.deepEqual(
+    recordAttempt(createAttempt(), "th he", edit),
+    createAttempt(),
+  );
+});
+
+test("instantFailIndex fails on the first wrong key only at 100% goal", () => {
+  const expected = "th he";
+  const wrong = describeTextEdit("th", "thx");
+  assert.equal(instantFailIndex(expected, wrong, 100), 2);
+  assert.equal(instantFailIndex(expected, wrong, 98), null);
+  assert.equal(
+    instantFailIndex(expected, describeTextEdit("th", "th "), 100),
+    null,
+  );
+  assert.equal(instantFailIndex(expected, describeTextEdit("", "x"), 100), 0);
+  // Deletions and paste-sized inserts are not instant fails.
+  assert.equal(
+    instantFailIndex(expected, describeTextEdit("thx", "th"), 100),
+    null,
+  );
+  assert.equal(
+    instantFailIndex(expected, describeTextEdit("", "zz"), 100),
+    null,
+  );
+});
+
+test("maxPhrases caps a seeded round and survives serialize/hydrate", () => {
+  const state = createPracticeState();
+  const settings = { ...state.settings.english_phrases, scope: 500 };
+  const uncapped = generatePhrases("english_phrases", settings, [], {
+    seed: 11,
+  });
+  const capped = newSession("english_phrases", settings, [], {
+    seed: 11,
+    maxPhrases: 25,
+  });
+  assert.equal(uncapped.length, 500);
+  assert.equal(capped.phrases.length, 25);
+  assert.deepEqual(capped.phrases, uncapped.slice(0, 25));
+
+  const midRound = {
+    ...state,
+    source: "english_phrases" as const,
+    settings: { ...state.settings, english_phrases: settings },
+    sessions: {
+      ...state.sessions,
+      english_phrases: {
+        ...capped,
+        phraseIndex: 5,
+        wpms: [40, 41, 42, 43, 44],
+      },
+    },
+  };
+  const restored = hydratePracticeState(serializePracticeState(midRound));
+  assert.ok(restored);
+  const session = restored.sessions.english_phrases;
+  assert.equal(session.maxPhrases, 25);
+  assert.equal(session.phrases.length, 25);
+  assert.deepEqual(session.phrases, capped.phrases);
+  assert.equal(session.phraseIndex, 5);
+
+  // Next round keeps the cap.
+  const next = completeSessionPhrase(
+    { ...capped, phraseIndex: 24 },
+    "english_phrases",
+    settings,
+    [],
+    40,
+    100,
+  );
+  assert.equal(next.phraseIndex, 0);
+  assert.equal(next.phrases.length, 25);
+  assert.equal(next.maxPhrases, 25);
 });
 
 test("generates a non-empty phrase for each built-in practice preset", () => {
@@ -313,7 +467,9 @@ test("ships English Phrases as natural, punctuated sentences", () => {
   );
   assert.ok(
     !englishPhrases.some(
-      (phrase) => /\ba [aeiou]/i.test(phrase) || /\ban [bcdfghjklmnpqrstvwxyz]/i.test(phrase),
+      (phrase) =>
+        /\ba [aeiou]/i.test(phrase) ||
+        /\ban [bcdfghjklmnpqrstvwxyz]/i.test(phrase),
     ),
     "phrase bank must use correct a/an",
   );

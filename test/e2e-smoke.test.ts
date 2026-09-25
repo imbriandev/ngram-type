@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ENGLISH_TRACK_V1,
+  LESSON_ROUND_PHRASES,
   applyLesson,
   createProgress,
   firstLesson,
@@ -24,10 +25,11 @@ import {
 import {
   createPracticeState,
   defaultSources,
+  exitFocus,
   hydratePracticeState,
-  newSession,
   serializePracticeState,
   sourcesForPicker,
+  startFocus,
 } from "../src/logic";
 
 /**
@@ -113,16 +115,9 @@ test("e2e smoke: curriculum, seed restore, focus practice, history cap", () => {
   const tokens = focusTokens(bank);
   assert.deepEqual(tokens, ["th", "an", "he"]);
 
-  const focusSettings = {
-    ...createPracticeState().settings.bigrams,
-    scope: tokens.length,
-    combination: 2,
-    repetition: 3,
-  };
-  const focusSession = newSession("bigrams", focusSettings, [], {
-    seed: 9_001,
-    values: tokens,
-  });
+  const focusState = startFocus(state, tokens, "guided", 9_001);
+  const focusSession = focusState.focusSession;
+  assert.ok(focusSession);
   assert.ok(focusSession.phrases.length > 0);
   assert.ok(
     focusSession.phrases.every((phrase) =>
@@ -130,28 +125,30 @@ test("e2e smoke: curriculum, seed restore, focus practice, history cap", () => {
     ),
     "Focus practice phrases must only use bank tokens",
   );
+  // Focus never writes into the dataset's session slot.
+  assert.equal(focusState.sessions, state.sessions);
 
-  const focusPersisted = hydratePracticeState({
-    source: "bigrams",
-    focusActive: true,
-    sessions: {
-      bigrams: {
-        seed: 9_001,
-        settings: focusSettings,
-        phraseIndex: 1,
-        wpms: [38],
-        accuracies: [100],
-        values: tokens,
-      },
-    },
-  });
+  const focusPersisted = hydratePracticeState(
+    serializePracticeState(focusState),
+  );
   assert.ok(focusPersisted);
   assert.equal(focusPersisted.focusActive, true);
+  assert.deepEqual(focusPersisted.focusSession?.phrases, focusSession.phrases);
+  assert.deepEqual(focusPersisted.focusSession?.values, tokens);
+  assert.equal(focusPersisted.sessions.bigrams.values, undefined);
   assert.deepEqual(
-    focusPersisted.sessions.bigrams.phrases,
-    focusSession.phrases,
+    exitFocus(focusPersisted).sessions.bigrams.phrases,
+    before.phrases,
   );
-  assert.deepEqual(focusPersisted.sessions.bigrams.values, tokens);
+
+  // Guided rounds are capped, including Phrases lessons.
+  const phrasesLesson = getLesson("phrases-500-flow");
+  assert.ok(phrasesLesson);
+  assert.equal(
+    applyLesson(createPracticeState(), phrasesLesson).sessions.english_phrases
+      .phrases.length,
+    LESSON_ROUND_PHRASES,
+  );
 
   bank = recordFocusSuccess(bank, tokens);
   assert.deepEqual(focusTokens(bank), ["th"]);

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ENGLISH_TRACK_V1,
+  LESSON_ROUND_PHRASES,
   applyLesson,
+  ensureLessonSession,
   createProgress,
   firstLesson,
   formatLessonSubtitle,
@@ -18,7 +20,12 @@ import {
   roundAverageMeetsLesson,
   settingsMatchLesson,
 } from "../src/curriculum";
-import { createPracticeState } from "../src/logic";
+import {
+  createPracticeState,
+  hydratePracticeState,
+  newSession,
+  serializePracticeState,
+} from "../src/logic";
 
 test("english-v1 track chains every lesson through next links", () => {
   assert.equal(ENGLISH_TRACK_V1.length, 11);
@@ -211,10 +218,7 @@ test("formatTrackProgressDescription covers guided and free modes", () => {
 
   const last = createProgress("phrases-500-flow");
   last.completedLessonIds = ENGLISH_TRACK_V1.map((lesson) => lesson.id);
-  assert.match(
-    formatTrackProgressDescription(last),
-    /track complete$/,
-  );
+  assert.match(formatTrackProgressDescription(last), /track complete$/);
 });
 
 test("lessonIndex and formatLessonSubtitle describe track entries", () => {
@@ -228,5 +232,106 @@ test("lessonIndex and formatLessonSubtitle describe track entries", () => {
   assert.equal(
     formatLessonSubtitle(lesson),
     "Tetragrams · Top 100 · Build · 40 WPM",
+  );
+});
+
+test("guided lesson rounds are capped to LESSON_ROUND_PHRASES for every lesson", () => {
+  for (const lesson of ENGLISH_TRACK_V1) {
+    const state = applyLesson(createPracticeState(), lesson);
+    const session = state.sessions[lesson.source];
+    assert.ok(session.phrases.length > 0);
+    assert.ok(
+      session.phrases.length <= LESSON_ROUND_PHRASES,
+      `${lesson.id}: ${session.phrases.length}`,
+    );
+    assert.equal(session.maxPhrases, LESSON_ROUND_PHRASES);
+  }
+  const phrases = getLesson("phrases-500-flow");
+  assert.ok(phrases);
+  assert.equal(
+    applyLesson(createPracticeState(), phrases).sessions.english_phrases.phrases
+      .length,
+    LESSON_ROUND_PHRASES,
+  );
+});
+
+test("ensureLessonSession keeps an in-progress lesson round (Resume/Start current)", () => {
+  const lesson = getLesson("tri-100-build");
+  assert.ok(lesson);
+  const applied = applyLesson(createPracticeState(), lesson);
+  const inProgress = {
+    ...applied,
+    sessions: {
+      ...applied.sessions,
+      trigrams: {
+        ...applied.sessions.trigrams,
+        phraseIndex: 7,
+        wpms: [40, 41, 42, 43, 44, 45, 46],
+        accuracies: [100, 100, 100, 100, 100, 100, 100],
+      },
+    },
+  };
+  // Simulate leaving to free practice on another dataset, then resuming.
+  const away = { ...inProgress, source: "bigrams" as const };
+  const resumed = ensureLessonSession(away, lesson);
+  assert.equal(resumed.source, "trigrams");
+  assert.equal(resumed.sessions.trigrams, inProgress.sessions.trigrams);
+  assert.equal(resumed.sessions.trigrams.phraseIndex, 7);
+  assert.equal(resumed.sessions.trigrams.wpms.length, 7);
+
+  // A different lesson on the same dataset starts fresh.
+  const other = getLesson("tri-50-warmup");
+  assert.ok(other);
+  const switched = ensureLessonSession(inProgress, other);
+  assert.equal(switched.sessions.trigrams.phraseIndex, 0);
+  assert.ok(settingsMatchLesson(switched.sessions.trigrams.settings, other));
+});
+
+test("ensureLessonSession migrates older uncapped lesson sessions gracefully", () => {
+  const lesson = getLesson("phrases-200-flow");
+  assert.ok(lesson);
+  const base = createPracticeState();
+  const oldSession = newSession("english_phrases", lessonSettings(lesson), [], {
+    seed: 321,
+  });
+  assert.equal(oldSession.phrases.length, 200);
+  const withOld = (phraseIndex: number) => ({
+    ...base,
+    sessions: {
+      ...base.sessions,
+      english_phrases: {
+        ...oldSession,
+        phraseIndex,
+        wpms: Array(phraseIndex).fill(40),
+        accuracies: Array(phraseIndex).fill(100),
+      },
+    },
+  });
+
+  // Progress fits inside the cap → same seed, same first phrases, progress kept.
+  const kept = ensureLessonSession(withOld(3), lesson).sessions.english_phrases;
+  assert.equal(kept.seed, 321);
+  assert.equal(kept.phrases.length, LESSON_ROUND_PHRASES);
+  assert.deepEqual(
+    kept.phrases,
+    oldSession.phrases.slice(0, LESSON_ROUND_PHRASES),
+  );
+  assert.equal(kept.phraseIndex, 3);
+  assert.equal(kept.wpms.length, 3);
+
+  // Progress beyond the cap → fresh capped round, no crash.
+  const fresh = ensureLessonSession(withOld(150), lesson).sessions
+    .english_phrases;
+  assert.equal(fresh.phraseIndex, 0);
+  assert.equal(fresh.phrases.length, LESSON_ROUND_PHRASES);
+
+  // Hydrating the old persisted shape also works end to end.
+  const hydrated = hydratePracticeState(serializePracticeState(withOld(150)));
+  assert.ok(hydrated);
+  assert.equal(hydrated.sessions.english_phrases.phrases.length, 200);
+  const migrated = ensureLessonSession(hydrated, lesson);
+  assert.equal(
+    migrated.sessions.english_phrases.phrases.length,
+    LESSON_ROUND_PHRASES,
   );
 });

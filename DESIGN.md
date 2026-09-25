@@ -23,7 +23,12 @@ feedback.
 - Keep focus in the typing field when the view opens or the phrase changes.
 - Keep the target visually stable; do not add a moving caret or progress marker
   to it.
-- Report a mismatch on the input itself. Never interrupt typing with a toast.
+- Report a mismatch on the input itself. Never interrupt typing with a toast;
+  toasts appear only at round boundaries (round/lesson complete, Focus done)
+  or when guided mode is left implicitly.
+- At a 100% accuracy goal, the first wrong key fails and restarts the phrase.
+- Return is not a keystroke (stripped from input). The Form primary action is
+  `⌘↵` (Reset Phrase, or Next Lesson once the lesson is complete).
 - Complete phrases automatically; do not require a submit action.
 - Reject multi-character paste input so the speed measurement remains useful.
 - Put secondary controls in the Action Panel and expose shortcuts for frequent
@@ -94,12 +99,13 @@ All lessons require **100% accuracy** (enforced by the existing phrase-complete 
 
 UX:
 
+- Each guided lesson round is capped at `LESSON_ROUND_PHRASES` (25) phrases, the first 25 of the seeded shuffle over the lesson scope (Phrases lessons too). Older uncapped sessions are re-capped from the same seed on load (progress kept when it fits, otherwise a fresh round).
 - Navigation title shows the lesson title plus phrase index (e.g. `Bi · Top 50 · Warm-up · 3/25`).
 - Practice Form shows a **Track** progress line (`Guided · 1/11 · N done · … → next: …`, or free-mode resume hint).
-- **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint.
-- Finishing a round at or above the lesson’s min WPM marks the lesson complete and suggests **Next lesson** in status text; advance is an Action, not forced.
+- **Open Curriculum** (⌘L) pushes a List of all 11 english-v1 lessons with Done / Current / Pending marks; any lesson can be started; **Resume Current** returns to the checkpoint without regenerating an in-progress round (`ensureLessonSession`).
+- Finishing a round at or above the lesson’s min WPM marks the lesson complete and shows a success toast with a **Next Lesson** action; advance is an Action (`⌘↵` once complete, `⌘⇧N` always), not forced. Otherwise a “Round complete” toast shows the lesson’s WPM goal.
 - Action Panel: **Open Curriculum**, **Resume Guided Track** (when free), **Next Lesson**, **Retry Lesson**, **Jump to Free Practice**.
-- Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset or saving mismatched settings leaves guided mode.
+- Free practice keeps the current Settings/dataset picker (Phase 0 `defaultSources`); changing dataset, starting Focus, or saving mismatched settings leaves guided mode with a “Left guided track” toast (resume with ⌘⇧G).
 
 ## Phase 2 — reflex training
 
@@ -107,11 +113,11 @@ Seeded sessions, Focus miss bank, and light round history.
 
 ### Seeded sessions
 
-Practice state version **5**. Each session stores `{ seed, settings snapshot, phraseIndex, wpms, accuracies, values? }` — **not** the phrase array. `generatePhrases` uses mulberry32 so the same seed + settings (+ optional Focus `values`) regenerates identical phrases on hydrate. Reloading Raycast mid-round restores the same phrases and progress. The old sanitize that wiped sessions with `phrases.length > 1000` is gone; legacy phrase arrays still hydrate once, then migrate to the seed model on the next save.
+Practice state version **6** (adds `focusSession`, `focusReturnMode`, optional session `maxPhrases`). Each session stores `{ seed, settings snapshot, phraseIndex, wpms, accuracies, values? }` — **not** the phrase array. `generatePhrases` uses mulberry32 so the same seed + settings (+ optional Focus `values`) regenerates identical phrases on hydrate. Reloading Raycast mid-round restores the same phrases and progress. The old sanitize that wiped sessions with `phrases.length > 1000` is gone; legacy phrase arrays still hydrate once, then migrate to the seed model on the next save.
 
 ### Focus-from-errors bank
 
-LocalStorage key `ngram-type-focus`. Wrong keystrokes and failed phrase attempts record the whitespace-delimited token into a capped bank (40). **Practice Focus Bank** (⌘⇧E) in the Reflex action section starts a Warm-up-style drill from those tokens (virtual bank via session `values`). Clean 100% phrase completions decay those tokens; zero misses removes them.
+LocalStorage key `ngram-type-focus`. Only actually mistyped keystrokes record their whitespace-delimited token into a capped bank (40); slow-but-clean failures bank nothing. **Practice Focus Bank** (⌘⇧E) in the Reflex action section starts a Warm-up-style drill in a dedicated `focusSession` (never a dataset's session slot). Focus ends after one round (toast) or via **Exit Focus** (⌘⇧E again) and returns to the previous mode/lesson. Clean 100% phrase completions decay those tokens; zero misses removes them.
 
 ### Light history
 
@@ -166,7 +172,7 @@ Daily checklist for Brian after `ray develop` / install:
 1. Open **Practice Ngrams** — guided track should land on the current lesson (cold start: Bi · Top 50 · Warm-up).
 2. **Preferences** (Raycast → Extensions → Ngram Type): default mode, sound, free-practice min WPM (cold start only).
 3. **Curriculum** `⌘L` — 11 english-v1 lessons; Start / Resume Current.
-4. While typing, **Enter** = Reset Phrase (primary action).
+4. While typing, **⌘↵** = Reset Phrase (Form primary action); **Next Lesson** takes ⌘↵ once the lesson is complete (also ⌘⇧N).
 5. **Practice Focus Bank** `⌘⇧E` — empty until misses accumulate; then Warm-up-style drill from the bank.
 6. **Open History** `⌘⇧H` — capped round log (WPM / accuracy).
 7. Confirm **English Phrases** are absent from Change Dataset (`⌘D`) until a Phrases lesson is active; they still appear via Curriculum after Core 200.

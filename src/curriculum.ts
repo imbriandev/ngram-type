@@ -9,6 +9,8 @@ import {
 export const CURRICULUM_TRACK_ID = "english-v1";
 export const PROGRESS_VERSION = 1;
 export const PROGRESS_STORAGE_KEY = "ngram-type-progress";
+/** Phrases per guided lesson round, sampled from the seeded shuffle of the scope. */
+export const LESSON_ROUND_PHRASES = 25;
 
 export type LessonPreset = "warm_up" | "build" | "flow";
 
@@ -232,7 +234,7 @@ export function settingsMatchLesson(
   );
 }
 
-/** Apply a lesson onto practice state: source, settings, fresh session. */
+/** Apply a lesson onto practice state: source, settings, fresh capped session. */
 export function applyLesson(
   state: PracticeState,
   lesson: Lesson,
@@ -246,14 +248,62 @@ export function applyLesson(
     source: lesson.source,
     settings,
     focusActive: false,
+    focusSession: null,
+    focusReturnMode: null,
     sessions: {
       ...state.sessions,
       [lesson.source]: newSession(
         lesson.source,
         settings[lesson.source],
         state.customWords,
+        { maxPhrases: LESSON_ROUND_PHRASES },
       ),
     },
+  };
+}
+
+/**
+ * Switch to a lesson without discarding an in-progress round. Keeps the
+ * existing session when it already matches the lesson; re-caps an older
+ * uncapped session from the same seed (keeping progress when it fits);
+ * otherwise starts fresh via applyLesson.
+ */
+export function ensureLessonSession(
+  state: PracticeState,
+  lesson: Lesson,
+): PracticeState {
+  const session = state.sessions[lesson.source];
+  if (!session || !settingsMatchLesson(session.settings, lesson)) {
+    return applyLesson(state, lesson);
+  }
+
+  let nextSession = session;
+  if (session.maxPhrases !== LESSON_ROUND_PHRASES) {
+    const capped = newSession(
+      lesson.source,
+      session.settings,
+      state.customWords,
+      { seed: session.seed, maxPhrases: LESSON_ROUND_PHRASES },
+    );
+    if (session.phraseIndex >= capped.phrases.length) {
+      return applyLesson(state, lesson);
+    }
+    nextSession = {
+      ...capped,
+      phraseIndex: session.phraseIndex,
+      wpms: session.wpms.slice(0, session.phraseIndex),
+      accuracies: session.accuracies.slice(0, session.phraseIndex),
+    };
+  }
+
+  return {
+    ...state,
+    source: lesson.source,
+    settings: { ...state.settings, [lesson.source]: lessonSettings(lesson) },
+    focusActive: false,
+    focusSession: null,
+    focusReturnMode: null,
+    sessions: { ...state.sessions, [lesson.source]: nextSession },
   };
 }
 
